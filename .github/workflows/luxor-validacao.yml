@@ -1,0 +1,35 @@
+name: Validar Luxor
+# Executado somente à mão (Actions → Validar Luxor → Run workflow).
+# Somente leitura: GET /workspace e, se autorizado, /pool/subaccounts, /pool/summary e /pool/workers.
+# Repositório público: a saída oculta nomes, saldos, receitas e hashrate (LUXOR_CHECK_REDACT=1).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verificar se o segredo existe
+        env:
+          LUXOR_API_KEY: ${{ secrets.LUXOR_API_KEY }}
+        run: |
+          if [ -z "$LUXOR_API_KEY" ]; then
+            echo "::error::Segredo LUXOR_API_KEY não cadastrado em Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+      - name: Consultar a API da Luxor (somente leitura)
+        env:
+          LUXOR_API_KEY: ${{ secrets.LUXOR_API_KEY }}
+          LUXOR_SUBACCOUNT: ${{ secrets.LUXOR_SUBACCOUNT }}
+          LUXOR_CURRENCY: BTC
+          POOL_SOURCE: luxor
+          LUXOR_CHECK_REDACT: '1'
+        run: npm run luxor:check
