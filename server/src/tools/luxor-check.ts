@@ -8,6 +8,9 @@ import { checkSummary, checkWorkers, checkWorkspace, LuxorClient, LuxorHttpError
 const ok = (s: string) => console.log(`  ✓ ${s}`);
 const bad = (s: string) => console.log(`  ✗ ${s}`);
 const info = (s: string) => console.log(`    ${s}`);
+// Em CI de repositório público (LUXOR_CHECK_REDACT=1) não imprime nomes, saldos nem receitas.
+const REDACT = process.env.LUXOR_CHECK_REDACT === '1';
+const priv = (s: string) => (REDACT ? '[oculto]' : s);
 
 async function main(): Promise<number> {
   const c = loadConfig();
@@ -38,14 +41,15 @@ async function main(): Promise<number> {
     bad(`HTTP 200, mas fora do esquema documentado: ${wsProblems.join('; ')}`);
     return 1;
   }
-  ok(`HTTP 200 · workspace "${ws.name}" · produtos: ${ws.products.join(', ') || '(nenhum)'} · sites: ${ws.sites.length}`);
+  ok(`HTTP 200 · workspace ${priv(`"${ws.name}"`)} · produtos: ${ws.products.join(', ') || '(nenhum)'} · sites: ${ws.sites.length}`);
 
   console.log('\n2. Subcontas — GET /pool/subaccounts');
   try {
     const sub = await client.get<{ subaccounts: { name: string }[] }>('/pool/subaccounts', { site_id: c.luxorSiteId });
     const names = (sub.subaccounts ?? []).map((s) => s.name);
-    ok(`${names.length} subconta(s): ${names.join(', ') || '(nenhuma)'}`);
-    if (c.luxorSubaccount && !names.includes(c.luxorSubaccount)) bad(`LUXOR_SUBACCOUNT="${c.luxorSubaccount}" não existe nesta conta.`);
+    ok(`${names.length} subconta(s)${REDACT ? '' : `: ${names.join(', ') || '(nenhuma)'}`}`);
+    if (c.luxorSubaccount && !names.includes(c.luxorSubaccount)) bad(`LUXOR_SUBACCOUNT=${priv(`"${c.luxorSubaccount}"`)} não existe nesta conta.`);
+    else if (c.luxorSubaccount) ok('LUXOR_SUBACCOUNT encontrada na conta');
     if (!names.length) info('Crie uma subconta no painel da Luxor antes de configurar o minerador.');
   } catch (e) {
     bad((e as Error).message);
@@ -61,9 +65,9 @@ async function main(): Promise<number> {
       ok('esquema conferido');
       const pick = (arr: { currency_type: string; revenue: number }[]) => arr.filter((x) => x.currency_type === c.luxorCurrency).reduce((a, x) => a + x.revenue, 0);
       info(`mineradores ativos: ${summary.active_miners}`);
-      info(`hashrate 5m / 24h (valor bruto, unidade não documentada): ${summary.hashrate_5m} / ${summary.hashrate_24h}`);
+      info(`hashrate 5m / 24h (valor bruto, unidade não documentada): ${priv(`${summary.hashrate_5m} / ${summary.hashrate_24h}`)}`);
       info(`uptime 24h: ${summary.uptime_24h}`);
-      info(`saldo: ${pick(summary.balance).toFixed(8)} ${c.luxorCurrency} · receita 24h: ${pick(summary.revenue_24h).toFixed(8)} · total: ${pick(summary.revenue_all_time).toFixed(8)}`);
+      info(REDACT ? 'saldo e receitas: [oculto]' : `saldo: ${pick(summary.balance).toFixed(8)} ${c.luxorCurrency} · receita 24h: ${pick(summary.revenue_24h).toFixed(8)} · total: ${pick(summary.revenue_all_time).toFixed(8)}`);
     }
   } catch (e) {
     bad((e as Error).message);
@@ -77,7 +81,7 @@ async function main(): Promise<number> {
     if (p.length) bad(`fora do esquema: ${p.join('; ')}`);
     else {
       ok(`${w.total_active} worker(s) ativo(s)`);
-      for (const x of w.workers.slice(0, 20)) info(`${x.subaccount_name}.${x.name} · hashrate ${x.hashrate} · última share ${x.last_share_time}`);
+      if (!REDACT) for (const x of w.workers.slice(0, 20)) info(`${x.subaccount_name}.${x.name} · hashrate ${x.hashrate} · última share ${x.last_share_time}`);
     }
   } catch (e) {
     bad((e as Error).message);
@@ -93,7 +97,7 @@ async function main(): Promise<number> {
   const mc = luxorMinerConfig(c);
   console.log('\nConfiguração do minerador (guia oficial da Luxor):');
   info(`URL: ${mc.url}`);
-  info(`Worker: ${mc.worker ?? '<SUBCONTA>.<NOME_DO_EQUIPAMENTO>'}`);
+  info(`Worker: ${mc.worker ? priv(mc.worker) : '<SUBCONTA>.<NOME_DO_EQUIPAMENTO>'}`);
   info(`Senha: ${mc.password} (exemplo da documentação)`);
   if (mc.missing.length) info(`Falta definir no .env: ${mc.missing.join('; ')}`);
   return verified ? 0 : 1;

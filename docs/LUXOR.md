@@ -84,3 +84,18 @@ Nada abaixo é feito automaticamente pelo sistema.
 ## Pagamentos para a Coinbase
 
 O endereço de pagamento é configurado **por você** no painel da Luxor (configurações de pagamento). Para receber na Coinbase, use o endereço de depósito BTC da sua conta. O sistema não altera configurações de pagamento. Para acompanhar os recebimentos em modo leitura, use `WALLET_SOURCE=mempool`, `WALLET_BTC_ADDRESS` e `ALLOWED_WALLETS`.
+
+## Validação pelo GitHub (sem usar o seu computador)
+
+O workflow **Validar Luxor** (`.github/workflows/luxor-validacao.yml`) roda o `luxor:check` nos servidores do GitHub, somente quando acionado à mão.
+
+1. No GitHub, abra **Settings → Secrets and variables → Actions → New repository secret**.
+2. Crie o segredo `LUXOR_API_KEY` com a sua chave nova. Opcional: crie `LUXOR_SUBACCOUNT` com o nome da subconta.
+3. Abra **Actions → Validar Luxor → Run workflow**.
+4. Resultado esperado no log: `✓ HTTP 200`, `✓ esquema conferido` e `Autenticação VALIDADA…`.
+
+Como o repositório é público, os logs também são. Por isso essa execução usa `LUXOR_CHECK_REDACT=1`: o nome do workspace, os nomes de subcontas e workers, os saldos, as receitas e o hashrate aparecem como `[oculto]`. O GitHub também mascara o valor dos segredos automaticamente.
+
+## Equipamento: RTX 3060
+
+A Luxor opera BTC (SHA-256), LTC/DOGE (Scrypt), SC e ZEC. Hoje todos esses são minerados por ASICs, e uma GPU como a RTX 3060 produziria hashrate próximo de zero neles. Por isso o modelo `.env.luxor.example` vem com `MINER_TYPE=none`. A integração com a API da Luxor funciona e pode ser validada mesmo assim, mas a evidência de mineração continuará no nível 0 até haver um ASIC compatível conectado.

@@ -146,11 +146,12 @@ test('.env.luxor.example: modo real com Luxor e campos de chave vazios', async (
   assert.equal(c.luxorApiKey, undefined);
   assert.equal(c.apiToken, undefined);
   assert.equal(c.luxorSubaccount, undefined);
-  assert.equal(c.minerType, 'cgminer');
+  assert.equal(c.minerType, 'none');
   assert.equal(c.minerUrl, undefined);
+  assert.equal(c.host, '0.0.0.0');
   assert.equal(c.marketSource, 'coinbase');
   assert.equal(c.networkSource, 'mempool');
-  assert.equal(c.walletSource, 'mempool');
+  assert.equal(c.walletSource, 'none');
   assert.equal(c.powerWatts, undefined);
   assert.deepEqual(c.allowedPools, ['stratum+tcp://btc.global.luxor.tech:700']);
   assert.equal(c.llmEnabled, false);
