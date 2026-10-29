@@ -12,6 +12,8 @@ import { verifyAuditChain, buildReceiptsCsv } from '../agents/d09-auditoria.ts';
 import { MAINTENANCE_TASKS } from '../agents/d08-automacao.ts';
 import { matchesPattern } from '../core/eventBus.ts';
 import { luxorMinerConfig, LUXOR_DOCS } from '../adapters/luxor.ts';
+import { DEFAULT_SELECTOR } from '../mining/selector.ts';
+import { autoMiningSnapshot } from '../mining/simulation.ts';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -157,6 +159,18 @@ export function createApiServer(app: App, webDir: string) {
     const v = await app.luxor.authenticate(true);
     if (v.state === 'validada') await app.luxor.stats(); // confere também o /pool/summary
     json(res, 200, { validation: app.luxor.validation });
+  });
+
+  // ---------------- seleção automática de moeda (SIMULAÇÃO, somente leitura) ----------------
+  route('GET', '/api/auto-mining', (_q, res) => {
+    // Consumo e tarifa: valores do .env quando informados; senão, padrões identificados como estimativa.
+    const energy = {
+      powerW: config.powerWatts ?? 170, // TDP máximo da RTX 3060 (estimativa)
+      powerIsMeasured: config.powerWatts !== undefined,
+      tariffKwh: config.energyPriceKwh ?? 0.9, // tarifa inicial da especificação (R$/kWh)
+    };
+    const snap = autoMiningSnapshot({ ...DEFAULT_SELECTOR, energy }, [], Date.now());
+    json(res, 200, { ...snap, energia: { ...energy, tarifaDoEnv: config.energyPriceKwh !== undefined } });
   });
 
   // ---------------- comandos do operador ----------------
