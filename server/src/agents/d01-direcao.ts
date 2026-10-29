@@ -149,6 +149,8 @@ export const direcao: AgentDefinition[] = [
       const w: string[] = [];
       if ((c.minerType === 'xmrig' || c.minerType === 'cgminer') && !c.minerUrl) w.push('MINER_URL ausente para o minerador real');
       if (c.poolSource === 'json' && !c.poolStatsUrl) w.push('POOL_STATS_URL ausente');
+      if (c.poolSource === 'luxor' && !c.luxorApiKey) w.push('POOL_SOURCE=luxor sem LUXOR_API_KEY');
+      if (c.poolSource === 'luxor' && !c.luxorSubaccount) w.push('LUXOR_SUBACCOUNT não definido: necessário para configurar o minerador');
       if (c.walletSource === 'mempool' && !c.walletBtcAddress) w.push('WALLET_BTC_ADDRESS ausente');
       if (c.llmEnabled && !c.anthropicApiKey) w.push('LLM_ENABLED sem ANTHROPIC_API_KEY');
       if (c.maxTempC >= c.criticalTempC) w.push('MAX_TEMP_C deve ser menor que CRITICAL_TEMP_C');

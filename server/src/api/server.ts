@@ -11,6 +11,7 @@ import { computeEvidence } from '../core/evidence.ts';
 import { verifyAuditChain, buildReceiptsCsv } from '../agents/d09-auditoria.ts';
 import { MAINTENANCE_TASKS } from '../agents/d08-automacao.ts';
 import { matchesPattern } from '../core/eventBus.ts';
+import { luxorMinerConfig, LUXOR_DOCS } from '../adapters/luxor.ts';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -137,6 +138,25 @@ export function createApiServer(app: App, webDir: string) {
   route('GET', '/api/exports/recebimentos.csv', (_q, res) => {
     res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="recebimentos.csv"' });
     res.end(buildReceiptsCsv(store, config.localCurrency));
+  });
+
+  // ---------------- pool Luxor (a chave nunca sai do backend) ----------------
+  route('GET', '/api/luxor/status', (_q, res) => {
+    json(res, 200, {
+      enabled: config.poolSource === 'luxor',
+      keyConfigured: !!config.luxorApiKey,
+      currency: config.luxorCurrency,
+      subaccount: config.luxorSubaccount ?? null,
+      validation: app.luxor?.validation ?? store.getKV('luxor.validation', null),
+      minerConfig: luxorMinerConfig(config),
+      docs: LUXOR_DOCS,
+    });
+  });
+  route('POST', '/api/luxor/validate', async (_q, res) => {
+    if (!app.luxor) return json(res, 409, { error: 'POOL_SOURCE não é luxor' });
+    const v = await app.luxor.authenticate(true);
+    if (v.state === 'validada') await app.luxor.stats(); // confere também o /pool/summary
+    json(res, 200, { validation: app.luxor.validation });
   });
 
   // ---------------- comandos do operador ----------------

@@ -190,7 +190,7 @@ function closePanel() {
 function setActiveNav(view) {
   for (const b of document.querySelectorAll('#nav button, #tabbar button')) {
     const v = b.dataset.view;
-    b.classList.toggle('active', v === view || (v === 'more' && ['actions', 'metrics', 'reports', 'risk', 'more'].includes(view)));
+    b.classList.toggle('active', v === view || (v === 'more' && ['actions', 'metrics', 'reports', 'risk', 'pool', 'more'].includes(view)));
   }
 }
 
@@ -213,6 +213,7 @@ async function renderPanel() {
     if (kind === 'metrics') return await panelMetrics();
     if (kind === 'reports') return await panelReports();
     if (kind === 'risk') return await panelRisk();
+    if (kind === 'pool') return await panelPool();
     if (kind === 'more') return panelMore();
   } catch (e) {
     if (e instanceof UnauthorizedError) return askToken();
@@ -365,6 +366,42 @@ async function panelReports() {
     <div class="section"><h4>Relatório operacional ${has(op) ? `· ${fmtAgo(op.ts)}` : ''}</h4>${has(op) ? `<pre class="json">${esc(JSON.stringify(op.body, null, 2))}</pre>` : '<p class="empty">Ainda não gerado.</p>'}</div>`);
 }
 
+const LUXOR_STATE = { nao_configurada: 'chave não configurada', validada: 'autenticação validada', falhou: 'autenticação recusada', inacessivel: 'API inacessível', resposta_invalida: 'resposta fora do esquema' };
+
+async function panelPool() {
+  const [l, metrics] = await Promise.all([api('/api/luxor/status'), api('/api/metrics?prefix=')]);
+  const m = Object.fromEntries(metrics.map((x) => [x.key, x]));
+  const v = l.validation;
+  const mc = l.minerConfig;
+  const ok = v?.state === 'validada';
+  const color = ok && v.dataVerified ? 'var(--ok)' : ok ? 'var(--wait)' : 'var(--err)';
+  const row = (k) => (m[k] ? `<span class="k">${esc(k)}</span><span class="v">${fmtValue(m[k])} ${tag(m[k].provenance)}</span>` : '');
+  setPanel('POOL PRINCIPAL', 'Luxor', `
+    ${!l.enabled ? '<p class="note">A Luxor não é a pool ativa. Defina <code>POOL_SOURCE=luxor</code> no .env do servidor.</p>' : ''}
+    <div class="section"><h4>Autenticação</h4><dl class="kv">
+      <dt>Chave no backend</dt><dd>${l.keyConfigured ? 'configurada (nunca enviada ao navegador)' : '<b style="color:var(--err)">ausente</b>'}</dd>
+      <dt>Estado</dt><dd><b style="color:${color}">${esc(v ? LUXOR_STATE[v.state] ?? v.state : 'não verificado')}</b>${v?.httpStatus ? ` · HTTP ${v.httpStatus}` : ''}</dd>
+      <dt>Dados conferidos</dt><dd>${v?.dataVerified ? 'sim: /workspace e /pool/summary conforme o esquema documentado' : 'não'}</dd>
+      ${v?.workspace ? `<dt>Workspace</dt><dd>${esc(v.workspace.name)} · ${esc(v.workspace.products.join(', '))}</dd>` : ''}
+      <dt>Última verificação</dt><dd>${v?.checkedAt ? fmtAgo(v.checkedAt) : 'nunca'}</dd>
+      <dt>Detalhe</dt><dd>${esc(v?.message ?? '—')}</dd>
+    </dl>
+    <div class="btn-row"><button class="btn" data-luxor-validate="1" ${l.enabled ? '' : 'disabled'}>Validar agora</button></div></div>
+    <div class="section"><h4>Dados da conta</h4>
+      ${m['pool.fallback_reason']?.value ? `<p class="note">Métricas de pool em modo SIMULADO: ${esc(m['pool.fallback_reason'].value)}</p>` : ''}
+      <div class="metric-grid">${['luxor.active_miners', 'luxor.hashrate_5m', 'luxor.uptime_24h', 'luxor.balance', 'luxor.revenue_24h', 'luxor.revenue_all_time', 'luxor.subaccounts', 'pool.source_mode'].map(row).join('') || '<span class="empty">Sem dados: nenhuma consulta autorizada ainda.</span>'}</div>
+    </div>
+    <div class="section"><h4>Configuração para o minerador (${esc(l.currency)})</h4>
+      <dl class="kv">
+        <dt>URL da pool</dt><dd><code>${esc(mc.url)}</code></dd>
+        <dt>Worker</dt><dd><code>${esc(mc.worker ?? '<SUBCONTA>.<NOME_DO_EQUIPAMENTO>')}</code></dd>
+        <dt>Senha</dt><dd><code>${esc(mc.password)}</code> <span class="meta">(exemplo da documentação)</span></dd>
+      </dl>
+      ${mc.missing.length ? `<p class="note">Falta definir no .env: ${mc.missing.map(esc).join('; ')}</p>` : ''}
+      <p class="meta">${mc.notes.map(esc).join(' ')} Fonte: <a href="${esc(mc.source)}" target="_blank" rel="noopener" style="color:var(--gold-2)">guia da Luxor</a>.</p>
+    </div>`);
+}
+
 async function panelRisk() {
   const [r, audit] = await Promise.all([api('/api/risk'), api('/api/audit/verify')]);
   const llm = st.summary?.llm;
@@ -384,7 +421,7 @@ async function panelRisk() {
 
 function panelMore() {
   setPanel('MENU', 'Mais opções', `<div class="list">
-    ${[['actions', 'Ações propostas'], ['metrics', 'Métricas'], ['reports', 'Relatórios'], ['risk', 'Guardião de Risco'], ['agents', 'Lista de agentes']].map(([v, l]) => `<button class="row" data-open="${v}" style="text-align:left">${l}</button>`).join('')}
+    ${[['pool', 'Pool Luxor'], ['actions', 'Ações propostas'], ['metrics', 'Métricas'], ['reports', 'Relatórios'], ['risk', 'Guardião de Risco'], ['agents', 'Lista de agentes']].map(([v, l]) => `<button class="row" data-open="${v}" style="text-align:left">${l}</button>`).join('')}
   </div>`);
 }
 
@@ -419,6 +456,7 @@ async function handlePanelClick(e) {
     if (d.reject) { await api(`/api/actions/${d.reject}/reject`, { method: 'POST' }); toast('Ação rejeitada'); return renderPanel(); }
     if (d.request) { await api(`/api/requests/${d.request}`, { method: 'POST' }); toast('Solicitação enviada'); setTimeout(renderPanel, 1500); return; }
     if (d.system) return togglePause();
+    if (d.luxorValidate) { t.disabled = true; toast('Consultando a Luxor (somente leitura)…'); const r = await api('/api/luxor/validate', { method: 'POST', allowError: true }); toast(r.validation ? `Luxor: ${LUXOR_STATE[r.validation.state] ?? r.validation.state}` : (r.error ?? 'falhou')); await refreshSummary(); return renderPanel(); }
     if (d.open) return openPanel(d.open);
     if (d.filterDept) { const id = Number(d.filterDept); st.office.filter.dept = st.office.filter.dept === id ? null : id; st.office.dirty = true; renderDirectory(); return renderPanel(); }
   } catch (err) {

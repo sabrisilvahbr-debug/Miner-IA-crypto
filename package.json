@@ -4,12 +4,16 @@
   "version": "0.1.0",
   "description": "AI CRYPTO MINER — VIRTUAL MINING OFFICE 50",
   "type": "module",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/main.ts",
     "dev": "node --watch --experimental-strip-types --disable-warning=ExperimentalWarning server/src/main.ts",
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test server/test/*.test.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "luxor:check": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/luxor-check.ts",
+    "build": "tsc -p tsconfig.json && node --check web/js/app.js && node --check web/js/office.js && node --check web/js/iso.js && node --check web/js/api.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

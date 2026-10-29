@@ -12,4 +12,4 @@ jobs:
         with:
           node-version: 22
       - run: npm test
-      - run: npm install --no-audit --no-fund && npm run typecheck
+      - run: npm install --no-audit --no-fund && npm run build

@@ -2,6 +2,7 @@
 import { connect } from 'node:net';
 import type { AgentDefinition, MetricInput } from '../core/types.ts';
 import { DisconnectedError } from '../core/rateLimiter.ts';
+import type { LuxorPoolStats } from '../adapters/luxor.ts';
 import { HOUR, MIN, SEC, fmtHashrate, metric } from './common.ts';
 
 function tcpLatency(url: string, timeoutMs = 4000): Promise<number> {
@@ -21,20 +22,42 @@ export const pools: AgentDefinition[] = [
     code: 'A21-CONECTOR-POOL',
     name: 'Conector de Pools',
     department: 5,
-    responsibility: 'Consulta as estatísticas da pool (endpoint JSON configurável) e registra o hashrate visto pela pool.',
+    responsibility: 'Consulta a pool principal (Luxor, via API oficial somente leitura, ou endpoint JSON) após autenticação válida; sem autenticação ou sem mineradores ativos, mantém as métricas simuladas e publica o motivo.',
     mode: 'scheduled',
     intervalMs: 2 * MIN,
     permissions: ['read:pool', 'write:metrics'],
-    inputs: ['POOL_STATS_URL'],
-    outputs: ['pool.connected', 'pool.hashrate_hs'],
+    inputs: ['POOL_SOURCE', 'LUXOR_API_KEY (backend)', 'POOL_STATS_URL'],
+    outputs: ['pool.connected', 'pool.source_mode', 'pool.fallback_reason', 'luxor.auth', 'luxor.active_miners', 'luxor.balance'],
     maturity: 'simulado',
     async run(ctx) {
       const pool = ctx.services.pool;
       try {
-        const s = await pool.stats();
-        const out: MetricInput[] = [metric('pool.connected', true, s.provenance, s.source)];
+        const s = (await pool.stats()) as LuxorPoolStats;
+        const out: MetricInput[] = [metric('pool.connected', !s.fallbackReason, s.provenance, s.source)];
+        out.push(metric('pool.source_mode', s.provenance, 'real', 'conector'));
+        out.push(metric('pool.fallback_reason', s.fallbackReason ?? '', 'real', 'conector'));
         if (s.hashrateHs !== undefined) out.push(metric('pool.hashrate_hs', s.hashrateHs, s.provenance, s.source, 'H/s'));
-        return { status: 'ok', summary: `Pool respondeu${s.hashrateHs ? ` · hashrate na pool ${fmtHashrate(s.hashrateHs)}` : ''}`, metrics: out };
+        if (s.validation) {
+          const v = s.validation;
+          out.push(metric('luxor.auth', v.state, 'real', 'luxor'), metric('luxor.data_verified', v.dataVerified, 'real', 'luxor'));
+        }
+        if (s.luxor) {
+          // Dados lidos da conta Luxor após autenticação: procedência real.
+          const l = s.luxor;
+          out.push(
+            metric('luxor.active_miners', l.activeMiners, 'real', 'luxor'),
+            // A documentação não informa a unidade do hashrate do summary; o valor é guardado como veio.
+            metric('luxor.hashrate_5m', l.hashrate5m, 'real', 'luxor', 'unidade não documentada'),
+            metric('luxor.hashrate_24h', l.hashrate24h, 'real', 'luxor', 'unidade não documentada'),
+            metric('luxor.uptime_24h', l.uptime24h, 'real', 'luxor'),
+            metric('luxor.balance', l.balance, 'real', 'luxor', l.currency),
+            metric('luxor.revenue_24h', l.revenue24h, 'real', 'luxor', l.currency),
+            metric('luxor.revenue_all_time', l.revenueAllTime, 'real', 'luxor', l.currency),
+            metric('luxor.subaccounts', l.subaccounts.join(', ') || '(nenhuma)', 'real', 'luxor'),
+          );
+        }
+        const why = s.fallbackReason ? ` · métricas de pool SIMULADAS: ${s.fallbackReason}` : '';
+        return { status: 'ok', summary: `Pool ${s.source}${s.luxor ? ` · ${s.luxor.activeMiners} minerador(es) ativo(s) na Luxor` : ''}${why}`, metrics: out };
       } catch (e) {
         if (e instanceof DisconnectedError) {
           return { status: 'disconnected', summary: e.message, metrics: [metric('pool.connected', false, pool.provenance, 'pool')], events: [{ type: 'pool.disconnected', severity: 'warn', message: e.message, data: { dedupeKey: 'pool-down' } }] };
@@ -85,7 +108,7 @@ export const pools: AgentDefinition[] = [
     mode: 'scheduled',
     intervalMs: 10 * MIN,
     permissions: ['read:pool', 'write:metrics'],
-    inputs: ['POOL_BALANCE_PATH', 'POOL_PAID_PATH'],
+    inputs: ['estatísticas da pool (Luxor ou JSON)'],
     outputs: ['pool.balance', 'pool.paid_total'],
     maturity: 'simulado',
     async run(ctx) {
