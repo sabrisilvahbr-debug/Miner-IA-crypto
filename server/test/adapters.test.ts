@@ -134,3 +134,24 @@ test('.env.example é válido e começa em modo simulação', async () => {
   assert.equal(c.llmEnabled, false);
   assert.equal(c.maxTempC, 80);
 });
+
+test('.env.luxor.example: modo real com Luxor e campos de chave vazios', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { parseDotEnv, loadConfig } = await import('../src/config.ts');
+  const env = parseDotEnv(readFileSync('.env.luxor.example', 'utf8'));
+  assert.equal(env.LUXOR_API_KEY, '', 'campo vazio com comentário na mesma linha');
+  const c = loadConfig(env, false);
+  assert.equal(c.poolSource, 'luxor');
+  assert.equal(c.luxorApiUrl, 'https://app.luxor.tech/api/v2');
+  assert.equal(c.luxorApiKey, undefined);
+  assert.equal(c.apiToken, undefined);
+  assert.equal(c.luxorSubaccount, undefined);
+  assert.equal(c.minerType, 'cgminer');
+  assert.equal(c.minerUrl, undefined);
+  assert.equal(c.marketSource, 'coinbase');
+  assert.equal(c.networkSource, 'mempool');
+  assert.equal(c.walletSource, 'mempool');
+  assert.equal(c.powerWatts, undefined);
+  assert.deepEqual(c.allowedPools, ['stratum+tcp://btc.global.luxor.tech:700']);
+  assert.equal(c.llmEnabled, false);
+});
