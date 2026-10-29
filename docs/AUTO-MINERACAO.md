@@ -7,20 +7,31 @@
 | Moeda | Algoritmo | Pool (fonte) | Situação |
 |---|---|---|---|
 | Pearl (PRL) | PearlHash | `stratum+tcp://prl.2miners.com:1818` ([2Miners](https://2miners.com/prl-mining-pool)) | Pool e algoritmo conferidos. Falta login/worker e software para a RTX 3060. |
-| Quantus (QTC) | Poseidon2 | `stratum+tcp://qtc.2miners.com:3636` ([2Miners](https://2miners.com/qtc-mining-pool)) | Pool e algoritmo conferidos. Falta login/worker e software para a RTX 3060. |
+| Quantus (QTC) | Poseidon2 (2Miners) × QPoW (WhatToMine) | `stratum+tcp://qtc.2miners.com:3636` ([2Miners](https://2miners.com/qtc-mining-pool)) | A INVESTIGAR desde 2026-10-29: o algoritmo diverge entre as fontes, e na WhatToMine a sigla QTC é de outra moeda (Qubitcoin). A Quantus aparece lá como QUANTUS. |
 | EPIC | não verificado | — | A INVESTIGAR. Sem pool nem minerador: nunca avaliada. |
 | Tari (XTM) | não verificado | — | A INVESTIGAR. Sem pool nem minerador: nunca avaliada. |
 
 Taxa da pool 2Miners: 1% (PPLNS). Pagamento mínimo: 1 PRL e 0,1 QTC.
 
-## Fonte de rentabilidade
+## Fonte de rentabilidade: WhatToMine
 
-A API da WhatToMine **não foi verificada**. A consulta a `whattomine.com` foi bloqueada neste ambiente (HTTP 403 pelo proxy), e a documentação de acesso não foi confirmada. Por isso:
-- o sistema **não tem fonte de rentabilidade validada**;
-- sem dados atuais (menos de 15 minutos), cada moeda aparece como indisponível e a decisão é `aguardar_dados`;
-- dados antigos nunca são usados como atuais.
+- Endpoint: `GET https://whattomine.com/coins.json`. Em 2026-10-29 ele respondeu sem chave. O sistema **não presume** que isso continue: qualquer falha (sem rede, HTTP 4xx/5xx, JSON fora do formato) vira "indisponível", com o motivo.
+- Habilite com `MINING_DATA_SOURCE=whattomine`. O padrão do código é `none`.
+- Cada entrada é validada (sigla, algoritmo, tempo de bloco, recompensa, `nethash`, cotação em BTC, `lagging`, `timestamp`). Entrada fora do formato é descartada, nunca corrigida.
+- Consulta a cada 5 minutos no máximo (cache).
+- A idade do dado vem do `timestamp` da própria WhatToMine. Acima de `MINING_DATA_MAX_AGE_MIN` (padrão 15), o dado não entra no cálculo. **Na verificação de 2026-10-29, os dados tinham cerca de 70 minutos**: com o limite de 15 minutos, o sistema tende a mostrar "desatualizado". Aumentar o limite é decisão sua.
+- Moeda com `lagging: true` não é usada. Algoritmo diferente do catálogo também não.
 
-Para alimentar a simulação, os dados precisam vir de uma fonte verificada. Hoje, o módulo aceita entradas do tipo `MarketQuote` (receita em BRL/dia, moedas/dia, horário da coleta e nome da fonte).
+### Cálculo da receita (sempre estimado)
+
+```
+moedas/dia = (hashrate da RTX 3060 / nethash) × recompensa do bloco × 86400 / tempo do bloco
+receita BRL/dia = moedas/dia × cotação da moeda em BTC × cotação do BTC em BRL (Coinbase)
+```
+
+- O hashrate vem de `GPU_HASHRATE_<SIGLA>` no `.env` (ex.: `GPU_HASHRATE_PRL`). Ele precisa ser **medido** na sua placa e estar na **mesma unidade do `nethash`** da WhatToMine, que não é documentada. Antes de confiar no número, compare o resultado com a calculadora do site da WhatToMine para o mesmo hashrate.
+- A cotação do BTC só é usada se for real (`MARKET_SOURCE=coinbase`). Cotação simulada é recusada.
+- A idade da cotação final é a do dado mais antigo entre WhatToMine e Coinbase.
 
 ## Regras de decisão
 
@@ -46,7 +57,8 @@ Os testes cobrem: cálculo de energia e lucro líquido, pagamento mínimo, fresc
 
 ## Limitações conhecidas
 
-- Nenhuma cotação real é usada: a fonte de rentabilidade não está validada.
-- Login/worker e software de mineração para PRL e QTC ainda não estão verificados.
+- A WhatToMine não é alcançável a partir do ambiente de desenvolvimento; o adaptador foi testado com respostas no formato real, mas a consulta ao vivo só acontece no seu computador.
+- O hashrate da RTX 3060 em Pearl ainda não foi medido: sem ele, o lucro fica indisponível.
+- Login/worker e software de mineração para a PRL ainda não estão verificados. A QTC está em investigação.
 - O painel visual ainda não mostra a seleção automática; a informação está disponível pela API.
 - Não há teste de integração com minerador real, porque nenhuma ativação real foi autorizada.

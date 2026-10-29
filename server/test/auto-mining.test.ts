@@ -7,12 +7,17 @@ import { runSimulation, autoMiningSnapshot, MODE_LABEL, REEVALUATE_EVERY_MS } fr
 
 const NOW = 1_000_000_000_000;
 const cfg: SelectorConfig = { ...DEFAULT_SELECTOR, energy: { powerW: 170, powerIsMeasured: false, tariffKwh: 0.9 } };
+// Moeda fictícia só para testar trocas entre duas candidatas (a QTC está em investigação desde 2026-10-29).
+const TST = { ...findCoin('PRL')!, symbol: 'TST', name: 'Teste', wtmTag: 'TST' };
+const TWO = [findCoin('PRL')!, TST];
 const q = (symbol: string, revenueLocalDay: number, coinsPerDay = 1, ageMs = 60_000): MarketQuote => ({
   symbol, revenueLocalDay, coinsPerDay, collectedAt: NOW - ageMs, source: 'teste',
 });
 
-test('catálogo: só PRL e QTC são avaliadas; EPIC e XTM ficam em investigação', () => {
-  assert.deepEqual(activeCandidates().map((c) => c.symbol).sort(), ['PRL', 'QTC']);
+test('catálogo: só a PRL é avaliada; QTC, EPIC e XTM ficam em investigação', () => {
+  assert.deepEqual(activeCandidates().map((c) => c.symbol), ['PRL']);
+  assert.equal(findCoin('QTC')?.status, 'investigar');
+  assert.equal(findCoin('QTC')?.wtmTag, 'QUANTUS', 'na WhatToMine a Quantus é QUANTUS; QTC é outra moeda');
   assert.equal(findCoin('epic')?.status, 'investigar');
   assert.equal(findCoin('XTM')?.status, 'investigar');
   assert.equal(findCoin('XTM')?.pool, undefined, 'investigação não tem pool inventada');
@@ -69,32 +74,32 @@ test('decisão: sem dados atuais aguarda, não troca', () => {
 });
 
 test('decisão: todas as alternativas negativas suspendem', () => {
-  const evals = activeCandidates().map((c) => evaluate(c, q(c.symbol, 1), cfg, NOW)); // receita 1 < energia 3,67
+  const evals = TWO.map((c) => evaluate(c, q(c.symbol, 1), cfg, NOW)); // receita 1 < energia 3,67
   assert.equal(decide({ evaluations: evals, current: 'PRL', now: NOW, cfg }).action, 'suspender');
 });
 
 test('decisão: sem moeda atual, escolhe a melhor', () => {
-  const evals = [evaluate(findCoin('PRL')!, q('PRL', 40), cfg, NOW), evaluate(findCoin('QTC')!, q('QTC', 60), cfg, NOW)];
+  const evals = [evaluate(findCoin('PRL')!, q('PRL', 40), cfg, NOW), evaluate(TST, q('TST', 60), cfg, NOW)];
   const d = decide({ evaluations: evals, now: NOW, cfg });
   assert.equal(d.action, 'trocar');
-  assert.equal(d.target, 'QTC');
+  assert.equal(d.target, 'TST');
 });
 
 test('decisão: diferença pequena não justifica troca (proteção contra oscilação)', () => {
-  const evals = [evaluate(findCoin('PRL')!, q('PRL', 50), cfg, NOW), evaluate(findCoin('QTC')!, q('QTC', 50.5), cfg, NOW)];
+  const evals = [evaluate(findCoin('PRL')!, q('PRL', 50), cfg, NOW), evaluate(TST, q('TST', 50.5), cfg, NOW)];
   const d = decide({ evaluations: evals, current: 'PRL', now: NOW, cfg });
   assert.equal(d.action, 'manter');
 });
 
 test('decisão: ganho grande troca, mas respeita o intervalo mínimo entre trocas', () => {
-  const evals = [evaluate(findCoin('PRL')!, q('PRL', 40), cfg, NOW), evaluate(findCoin('QTC')!, q('QTC', 80), cfg, NOW)];
+  const evals = [evaluate(findCoin('PRL')!, q('PRL', 40), cfg, NOW), evaluate(TST, q('TST', 80), cfg, NOW)];
   assert.equal(decide({ evaluations: evals, current: 'PRL', now: NOW, cfg }).action, 'trocar');
   const recente = decide({ evaluations: evals, current: 'PRL', lastSwitchAt: NOW - 5 * 60_000, now: NOW, cfg });
   assert.equal(recente.action, 'manter');
 });
 
 test('decisão: não troca no escuro quando a moeda atual não tem dado', () => {
-  const evals = [evaluate(findCoin('PRL')!, undefined, cfg, NOW), evaluate(findCoin('QTC')!, q('QTC', 80), cfg, NOW)];
+  const evals = [evaluate(findCoin('PRL')!, undefined, cfg, NOW), evaluate(TST, q('TST', 80), cfg, NOW)];
   const d = decide({ evaluations: evals, current: 'PRL', now: NOW, cfg });
   assert.equal(d.action, 'manter');
 });
@@ -108,18 +113,18 @@ test('simulação: fonte de mercado falhando não gera trocas e registra aguarda
   assert.equal(r.finalCurrent, 'PRL');
 });
 
-test('simulação: cenário com queda da PRL troca para a QTC e conta a troca', () => {
+test('simulação: cenário com queda da PRL troca para outra candidata e conta a troca', () => {
   const steps = [
-    { now: NOW, quotes: [q('PRL', 60), q('QTC', 40)] },
-    { now: NOW + REEVALUATE_EVERY_MS, quotes: [q('PRL', 30), q('QTC', 90)] },
+    { now: NOW, quotes: [q('PRL', 60), q('TST', 40)] },
+    { now: NOW + REEVALUATE_EVERY_MS, quotes: [q('PRL', 30), q('TST', 90)] },
   ];
-  const r = runSimulation(steps, cfg, 'PRL');
+  const r = runSimulation(steps, cfg, 'PRL', TWO);
   assert.equal(r.switches, 1);
-  assert.equal(r.finalCurrent, 'QTC');
+  assert.equal(r.finalCurrent, 'TST');
 });
 
 test('simulação: nunca usa moeda fora do catálogo validado', () => {
-  const r = runSimulation([{ now: NOW, quotes: [q('EPIC', 999), q('XTM', 999)] }], cfg);
+  const r = runSimulation([{ now: NOW, quotes: [q('EPIC', 999), q('XTM', 999), q('QTC', 999)] }], cfg);
   assert.equal(r.records[0].decision.action, 'aguardar_dados');
 });
 
