@@ -41,6 +41,9 @@ export interface AppConfig {
 
   powerWatts?: number;
   nvidiaSmiPath?: string; // opcional: caminho absoluto do nvidia-smi (somente leitura)
+  miningDataSource: 'whattomine' | 'none'; // fonte de rentabilidade das moedas de GPU
+  miningDataMaxAgeMin: number; // dado mais velho que isso não entra no cálculo
+  gpuHashrates: Record<string, number>; // GPU_HASHRATE_<SIGLA>, mesma unidade do nethash da WhatToMine
   energyPriceKwh?: number; // moeda local (BRL)
   localCurrency: string;
 
@@ -120,6 +123,20 @@ function oneOf<T extends string>(env: NodeJS.ProcessEnv, k: string, allowed: rea
   return v && allowed.includes(v) ? v : d;
 }
 
+/** Lê GPU_HASHRATE_<SIGLA>=<número positivo>. Valores inválidos são ignorados (nunca viram zero). */
+export function gpuHashrates(env: NodeJS.ProcessEnv): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(env)) {
+    const m = /^GPU_HASHRATE_([A-Z0-9]{2,12})$/.exec(k);
+    if (!m || v === undefined) continue;
+    const t = v.trim();
+    if (!/^\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) continue;
+    const n = Number(t);
+    if (Number.isFinite(n) && n > 0) out[m[1]] = n;
+  }
+  return out;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = true): AppConfig {
   if (useDotEnv) loadDotEnv();
   const dataDir = str(env, 'DATA_DIR') ?? 'data';
@@ -159,6 +176,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
 
     powerWatts: optNum(env, 'POWER_WATTS'),
     nvidiaSmiPath: str(env, 'NVIDIA_SMI_PATH'),
+    miningDataSource: oneOf(env, 'MINING_DATA_SOURCE', ['whattomine', 'none'] as const, 'none'),
+    miningDataMaxAgeMin: num(env, 'MINING_DATA_MAX_AGE_MIN', 15),
+    gpuHashrates: gpuHashrates(env),
     energyPriceKwh: optNum(env, 'ENERGY_PRICE_KWH'),
     localCurrency: str(env, 'LOCAL_CURRENCY') ?? 'BRL',
 

@@ -12,7 +12,10 @@ import { verifyAuditChain, buildReceiptsCsv } from '../agents/d09-auditoria.ts';
 import { MAINTENANCE_TASKS } from '../agents/d08-automacao.ts';
 import { matchesPattern } from '../core/eventBus.ts';
 import { luxorMinerConfig, LUXOR_DOCS } from '../adapters/luxor.ts';
-import { DEFAULT_SELECTOR } from '../mining/selector.ts';
+import { DEFAULT_SELECTOR, activeCandidates } from '../mining/selector.ts';
+import { buildQuote } from '../mining/quotes.ts';
+import type { MarketQuote } from '../mining/profitability.ts';
+import { WhatToMineSource } from '../adapters/whattomine.ts';
 import { autoMiningSnapshot } from '../mining/simulation.ts';
 import { GpuMonitor } from '../gpu/monitor.ts';
 
@@ -167,15 +170,48 @@ export function createApiServer(app: App, webDir: string) {
   route('GET', '/api/gpu', async (_q, res) => json(res, 200, await gpu.read()));
 
   // ---------------- seleção automática de moeda (SIMULAÇÃO, somente leitura) ----------------
-  route('GET', '/api/auto-mining', (_q, res) => {
+  const wtm = config.miningDataSource === 'whattomine' ? new WhatToMineSource(app.http) : undefined;
+  route('GET', '/api/auto-mining', async (_q, res) => {
     // Consumo e tarifa: valores do .env quando informados; senão, padrões identificados como estimativa.
     const energy = {
       powerW: config.powerWatts ?? 170, // TDP máximo da RTX 3060 (estimativa)
       powerIsMeasured: config.powerWatts !== undefined,
       tariffKwh: config.energyPriceKwh ?? 0.9, // tarifa inicial da especificação (R$/kWh)
     };
-    const snap = autoMiningSnapshot({ ...DEFAULT_SELECTOR, energy }, [], Date.now());
-    json(res, 200, { ...snap, energia: { ...energy, tarifaDoEnv: config.energyPriceKwh !== undefined } });
+    const cfg = { ...DEFAULT_SELECTOR, energy, maxQuoteAgeMs: config.miningDataMaxAgeMin * 60_000 };
+    const now = Date.now();
+    const quotes: MarketQuote[] = [];
+    const motivos: Record<string, string> = {};
+    let fonte = 'indisponível: MINING_DATA_SOURCE=none (nenhuma fonte de rentabilidade habilitada)';
+    let fonteStatus: Record<string, unknown> = { habilitada: false };
+    if (wtm) {
+      const st = await wtm.coins();
+      const p = store.latestMetric(`price.BTC-${config.localCurrency}`);
+      const btc = p && typeof p.value === 'number' ? { price: p.value, ts: p.ts, provenance: p.provenance } : undefined;
+      for (const coin of activeCandidates()) {
+        const r = buildQuote(coin, st.ok ? st.coins : undefined, config.gpuHashrates[coin.symbol], btc);
+        if (r.quote) quotes.push(r.quote);
+        else motivos[coin.symbol] = st.ok ? r.reason : st.reason;
+      }
+      const coinAges = st.ok
+        ? Object.fromEntries(activeCandidates().filter((c) => c.wtmTag).map((c) => {
+            const w = st.coins.find((x) => x.tag === c.wtmTag);
+            return [c.symbol, w ? { idadeMin: Math.round((now - w.timestampMs) / 60_000), atrasado: w.lagging, algoritmo: w.algorithm } : null];
+          }))
+        : {};
+      fonte = st.ok ? 'whattomine + coinbase (estimado)' : st.reason;
+      fonteStatus = {
+        habilitada: true,
+        ok: st.ok,
+        consultadoEm: new Date(st.ok ? st.fetchedAt : st.at).toISOString(),
+        entradasRejeitadas: st.ok ? st.rejected : undefined,
+        moedas: coinAges,
+        cotacaoBtc: btc ? { procedencia: btc.provenance, idadeMin: Math.round((now - btc.ts) / 60_000) } : null,
+        limiteIdadeMin: config.miningDataMaxAgeMin,
+      };
+    }
+    const snap = autoMiningSnapshot(cfg, quotes, now, { motivos, fonte });
+    json(res, 200, { ...snap, fonteStatus, energia: { ...energy, tarifaDoEnv: config.energyPriceKwh !== undefined } });
   });
 
   // ---------------- comandos do operador ----------------

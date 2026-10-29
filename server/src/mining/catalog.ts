@@ -2,7 +2,7 @@
 // Status:
 //  - pool_validada: pool, endereço de stratum, algoritmo, taxa e pagamento mínimo conferidos na página da pool.
 //                   Elegível para a SIMULAÇÃO. Ainda falta validar login e software antes de qualquer ativação real.
-//  - investigar:    listada pelo operador, mas sem pool e minerador verificados. Nunca é avaliada para mineração.
+//  - investigar:    sem pool, minerador ou algoritmo confirmados entre as fontes. Nunca é avaliada para mineração.
 // Quando uma moeda for adicionada, registre a URL da fonte e a data da verificação.
 
 export type CoinStatus = 'pool_validada' | 'investigar';
@@ -22,6 +22,8 @@ export interface CoinCandidate {
   algorithm: string;
   status: CoinStatus;
   pool?: PoolInfo;
+  wtmTag?: string; // sigla da moeda na WhatToMine (pode diferir da sigla da pool)
+  wtmAlgorithm?: string; // nome do algoritmo na WhatToMine, conferido com a pool
   pendencias: string[]; // o que ainda falta validar
 }
 
@@ -33,6 +35,8 @@ export const CATALOG: CoinCandidate[] = [
     name: 'Pearl',
     algorithm: 'PearlHash',
     status: 'pool_validada',
+    wtmTag: 'PRL',
+    wtmAlgorithm: 'Pearl', // 2Miners chama de PearlHash; WhatToMine, de Pearl
     pool: {
       name: '2Miners (PPLNS)',
       stratumUrl: 'stratum+tcp://prl.2miners.com:1818',
@@ -50,7 +54,10 @@ export const CATALOG: CoinCandidate[] = [
     symbol: 'QTC',
     name: 'Quantus',
     algorithm: 'Poseidon2',
-    status: 'pool_validada',
+    // Rebaixada em 2026-10-29: algoritmo diverge entre as fontes (2Miners: Poseidon2; WhatToMine: QPoW)
+    // e, na WhatToMine, a sigla QTC pertence a outra moeda (Qubitcoin). A Quantus aparece como QUANTUS.
+    status: 'investigar',
+    wtmTag: 'QUANTUS',
     pool: {
       name: '2Miners (PPLNS)',
       stratumUrl: 'stratum+tcp://qtc.2miners.com:3636',
@@ -60,8 +67,10 @@ export const CATALOG: CoinCandidate[] = [
       verifiedAt: VERIFIED_AT,
     },
     pendencias: [
+      'algoritmo diverge: 2Miners informa Poseidon2, WhatToMine informa QPoW',
+      'na WhatToMine a sigla QTC é da Qubitcoin; a Quantus aparece como QUANTUS',
       'formato de login/worker não publicado na página da pool',
-      'software de mineração compatível com Poseidon2 na RTX 3060 não verificado',
+      'software de mineração compatível na RTX 3060 não verificado',
     ],
   },
   {

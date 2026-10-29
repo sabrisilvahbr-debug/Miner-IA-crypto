@@ -57,7 +57,7 @@ export function createApp(config: AppConfig, opts: AppOptions = {}) {
     store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, ...ext, ...opts.overrides,
   } as Services;
   runtime.register(opts.agents ?? ALL_AGENTS);
-  return { config, store, bus, guardian, limiter, llm, runtime, logger, luxor };
+  return { config, store, bus, guardian, limiter, http, llm, runtime, logger, luxor };
 }
 
 export type App = ReturnType<typeof createApp>;
