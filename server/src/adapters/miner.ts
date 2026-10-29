@@ -36,8 +36,12 @@ export interface MinerAdapter {
 export class NoMinerAdapter implements MinerAdapter {
   readonly type = 'none';
   readonly provenance: Provenance = 'real';
+  private reason: string;
+  constructor(reason = 'nenhum minerador configurado (MINER_TYPE=none)') {
+    this.reason = reason;
+  }
   async summary(): Promise<MinerSummary> {
-    throw new DisconnectedError('nenhum minerador configurado (MINER_TYPE=none)');
+    throw new DisconnectedError(this.reason);
   }
 }
 
@@ -237,9 +241,9 @@ export function createMinerAdapter(c: AppConfig, http: HttpClient, now: () => nu
     case 'simulated':
       return new SimulatedMinerAdapter(c.minerAlgo, now);
     case 'xmrig':
-      return c.minerUrl ? new XmrigAdapter(http, c.minerUrl, c.minerAccessToken) : new NoMinerAdapter();
+      return c.minerUrl ? new XmrigAdapter(http, c.minerUrl, c.minerAccessToken) : new NoMinerAdapter('MINER_URL vazio: aguardando o endereço do XMRig');
     case 'cgminer':
-      return c.minerUrl ? new CgminerAdapter(c.minerUrl) : new NoMinerAdapter();
+      return c.minerUrl ? new CgminerAdapter(c.minerUrl) : new NoMinerAdapter('MINER_URL vazio: aguardando o IP do ASIC (tcp://IP-DO-ASIC:4028)');
     default:
       return new NoMinerAdapter();
   }

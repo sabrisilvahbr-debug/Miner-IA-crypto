@@ -39,7 +39,7 @@ O guia não cita Stratum V2, TLS ou servidores regionais: o endereço `global` e
    ```bash
    git pull
    ```
-3. Crie o `.env` a partir do exemplo e preencha:
+3. Crie o `.env` a partir do modelo completo (`cp .env.luxor.example .env`) e preencha pelo menos:
    ```
    POOL_SOURCE=luxor
    LUXOR_API_KEY=<sua chave nova>
