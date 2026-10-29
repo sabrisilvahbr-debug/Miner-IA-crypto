@@ -14,6 +14,7 @@ import { matchesPattern } from '../core/eventBus.ts';
 import { luxorMinerConfig, LUXOR_DOCS } from '../adapters/luxor.ts';
 import { DEFAULT_SELECTOR } from '../mining/selector.ts';
 import { autoMiningSnapshot } from '../mining/simulation.ts';
+import { GpuMonitor } from '../gpu/monitor.ts';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -160,6 +161,10 @@ export function createApiServer(app: App, webDir: string) {
     if (v.state === 'validada') await app.luxor.stats(); // confere também o /pool/summary
     json(res, 200, { validation: app.luxor.validation });
   });
+
+  // ---------------- GPU (somente leitura pelo nvidia-smi; nenhum minerador é consultado ou iniciado) ----------------
+  const gpu = new GpuMonitor({ smiPath: config.nvidiaSmiPath });
+  route('GET', '/api/gpu', async (_q, res) => json(res, 200, await gpu.read()));
 
   // ---------------- seleção automática de moeda (SIMULAÇÃO, somente leitura) ----------------
   route('GET', '/api/auto-mining', (_q, res) => {

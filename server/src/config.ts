@@ -40,6 +40,7 @@ export interface AppConfig {
   allowedWallets: string[];
 
   powerWatts?: number;
+  nvidiaSmiPath?: string; // opcional: caminho absoluto do nvidia-smi (somente leitura)
   energyPriceKwh?: number; // moeda local (BRL)
   localCurrency: string;
 
@@ -157,6 +158,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
     allowedWallets: list(env, 'ALLOWED_WALLETS'),
 
     powerWatts: optNum(env, 'POWER_WATTS'),
+    nvidiaSmiPath: str(env, 'NVIDIA_SMI_PATH'),
     energyPriceKwh: optNum(env, 'ENERGY_PRICE_KWH'),
     localCurrency: str(env, 'LOCAL_CURRENCY') ?? 'BRL',
 
