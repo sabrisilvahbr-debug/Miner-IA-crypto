@@ -235,6 +235,10 @@ export class NoWallet implements WalletAdapter {
 }
 
 export function createExternalAdapters(c: AppConfig, http: HttpClient, now: () => number) {
+  // Defesa extra: adaptadores simulados só existem na suíte de testes (APP_ENV=test).
+  if (c.appEnv !== 'test' && [c.marketSource, c.networkSource, c.poolSource, c.walletSource].includes('simulated')) {
+    throw new Error('fonte simulada recusada fora do ambiente de testes');
+  }
   return {
     market: c.marketSource === 'coinbase' ? new CoinbaseMarket(http) : c.marketSource === 'simulated' ? new SimulatedMarket(now) : new NoMarket(),
     network: c.networkSource === 'mempool' ? new MempoolNetwork(http) : c.networkSource === 'simulated' ? new SimulatedNetwork(now) : new NoNetwork(),

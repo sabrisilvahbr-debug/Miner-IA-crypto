@@ -12,17 +12,12 @@ export interface MarketQuote {
   source: string; // nome da fonte, ex.: "whattomine", "manual"
 }
 
-export interface EnergyInput {
-  powerW: number; // consumo usado no cálculo (medido ou estimado)
-  powerIsMeasured: boolean;
-  tariffKwh: number; // R$/kWh
-}
-
 export interface NetResult {
   grossDay: number;
-  energyDay: number;
   poolFeeDay: number;
   minerFeeDay: number;
+  energyDay: number;
+  otherDay: number;
   netDay: number;
 }
 
@@ -34,16 +29,17 @@ export function energyCostDay(powerW: number, tariffKwh: number): number {
   return (powerW / 1000) * 24 * tariffKwh;
 }
 
-export function netDay(revenueLocalDay: number, poolFee: number, energy: EnergyInput, minerFee = 0): NetResult {
-  const energyDay = energyCostDay(energy.powerW, energy.tariffKwh);
+/** Lucro líquido estimado = receita bruta − taxas − eletricidade − outros custos. Cada parcela fica separada. */
+export function netDay(revenueLocalDay: number, poolFee: number, energyDay: number, minerFee = 0, otherDay = 0): NetResult {
   const poolFeeDay = revenueLocalDay * poolFee;
   const minerFeeDay = revenueLocalDay * minerFee;
   return {
     grossDay: revenueLocalDay,
-    energyDay,
     poolFeeDay,
     minerFeeDay,
-    netDay: revenueLocalDay - poolFeeDay - minerFeeDay - energyDay,
+    energyDay,
+    otherDay,
+    netDay: revenueLocalDay - poolFeeDay - minerFeeDay - energyDay - otherDay,
   };
 }
 

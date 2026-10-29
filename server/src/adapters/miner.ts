@@ -239,6 +239,7 @@ export class MinerService {
 export function createMinerAdapter(c: AppConfig, http: HttpClient, now: () => number): MinerAdapter {
   switch (c.minerType) {
     case 'simulated':
+      if (c.appEnv !== 'test') throw new Error('minerador simulado recusado fora do ambiente de testes');
       return new SimulatedMinerAdapter(c.minerAlgo, now);
     case 'xmrig':
       return c.minerUrl ? new XmrigAdapter(http, c.minerUrl, c.minerAccessToken) : new NoMinerAdapter('MINER_URL vazio: aguardando o endereço do XMRig');

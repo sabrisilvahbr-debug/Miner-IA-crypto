@@ -1,12 +1,12 @@
-# Seleção automática de moeda (RTX 3060) — SIMULAÇÃO
+# Seleção automática de moeda (RTX 3050 6 GB) — somente recomendação
 
-**Estado atual: somente simulação.** O módulo decide qual moeda seria a melhor, mas não inicia mineradores, não altera carteiras e não executa trocas. Qualquer ativação real exige aprovação explícita do operador em uma etapa posterior.
+**Estado atual: mineração DESATIVADA.** O módulo calcula, com dados reais, qual moeda seria a melhor, mas não inicia mineradores, não altera carteiras e não executa trocas. Sem dados reais, mostra `RENTABILIDADE NÃO CALCULÁVEL — FALTA DE DADOS REAIS`. Qualquer ativação real exige aprovação explícita do operador em uma etapa posterior.
 
 ## Moedas
 
 | Moeda | Algoritmo | Pool (fonte) | Situação |
 |---|---|---|---|
-| Pearl (PRL) | PearlHash | `stratum+tcp://prl.2miners.com:1818` ([2Miners](https://2miners.com/prl-mining-pool)) | Pool e algoritmo conferidos. Falta login/worker e software para a RTX 3060. |
+| Pearl (PRL) | PearlHash | `stratum+tcp://prl.2miners.com:1818` ([2Miners](https://2miners.com/prl-mining-pool)) | Pool e algoritmo conferidos. Compatibilidade com a RTX 3050 de 6 GB, minerador e login ainda não comprovados (ver `docs/INTEGRACOES-GPU.md`). |
 | Quantus (QTC) | Poseidon2 (2Miners) × QPoW (WhatToMine) | `stratum+tcp://qtc.2miners.com:3636` ([2Miners](https://2miners.com/qtc-mining-pool)) | A INVESTIGAR desde 2026-10-29: o algoritmo diverge entre as fontes, e na WhatToMine a sigla QTC é de outra moeda (Qubitcoin). A Quantus aparece lá como QUANTUS. |
 | EPIC | não verificado | — | A INVESTIGAR. Sem pool nem minerador: nunca avaliada. |
 | Tari (XTM) | não verificado | — | A INVESTIGAR. Sem pool nem minerador: nunca avaliada. |
@@ -25,7 +25,7 @@ Taxa da pool 2Miners: 1% (PPLNS). Pagamento mínimo: 1 PRL e 0,1 QTC.
 ### Cálculo da receita (sempre estimado)
 
 ```
-moedas/dia = (hashrate da RTX 3060 / nethash) × recompensa do bloco × 86400 / tempo do bloco
+moedas/dia = (hashrate medido da GPU / nethash) × recompensa do bloco × 86400 / tempo do bloco
 receita BRL/dia = moedas/dia × cotação da moeda em BTC × cotação do BTC em BRL (Coinbase)
 ```
 
@@ -37,8 +37,7 @@ receita BRL/dia = moedas/dia × cotação da moeda em BTC × cotação do BTC em
 
 - Lucro líquido = receita − taxa da pool − taxa do minerador − energia.
 - Energia = consumo (W) / 1000 × 24 h × tarifa (R$/kWh).
-- Tarifa inicial: R$ 0,90/kWh. Se `ENERGY_PRICE_KWH` estiver no `.env`, ele tem prioridade.
-- Consumo: se `POWER_WATTS` não estiver definido, usa 170 W (TDP máximo da RTX 3060, marcado como estimativa).
+- Custo de energia: vem do módulo de energia (`/api/energy`), na modalidade escolhida em `ENERGY_COST_MODE`. **Não há mais valor padrão de consumo**: sem custo informado ou medido, a rentabilidade não é calculável.
 - A cada 5 minutos, o módulo reavalia. Troca só quando o ganho no horizonte (1 dia) passa do custo da parada (3 min de resultado atual) **e** do limite mínimo (R$ 1,00 e 10% de vantagem relativa), **e** o intervalo desde a última troca passou de 30 minutos.
 - Se todas as alternativas têm resultado líquido negativo, a decisão é `suspender`.
 - Não escolhe moeda pelo rendimento bruto nem pela quantidade de moedas.
@@ -58,7 +57,7 @@ Os testes cobrem: cálculo de energia e lucro líquido, pagamento mínimo, fresc
 ## Limitações conhecidas
 
 - A WhatToMine não é alcançável a partir do ambiente de desenvolvimento; o adaptador foi testado com respostas no formato real, mas a consulta ao vivo só acontece no seu computador.
-- O hashrate da RTX 3060 em Pearl ainda não foi medido: sem ele, o lucro fica indisponível.
+- O hashrate da RTX 3050 em Pearl ainda não foi medido: sem ele, o lucro fica indisponível.
 - Login/worker e software de mineração para a PRL ainda não estão verificados. A QTC está em investigação.
 - O painel visual ainda não mostra a seleção automática; a informação está disponível pela API.
 - Não há teste de integração com minerador real, porque nenhuma ativação real foi autorizada.

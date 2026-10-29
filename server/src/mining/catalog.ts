@@ -1,4 +1,5 @@
-// Catálogo de moedas candidatas para a GPU (RTX 3060). Somente dados verificados em fontes oficiais.
+// Catálogo de moedas candidatas para a GPU do operador (NVIDIA GeForce RTX 3050, 6 GB, limite de 70 W, lido pelo nvidia-smi).
+// Somente dados verificados nas fontes indicadas. Fontes de cada item: docs/INTEGRACOES-GPU.md.
 // Status:
 //  - pool_validada: pool, endereço de stratum, algoritmo, taxa e pagamento mínimo conferidos na página da pool.
 //                   Elegível para a SIMULAÇÃO. Ainda falta validar login e software antes de qualquer ativação real.
@@ -46,8 +47,9 @@ export const CATALOG: CoinCandidate[] = [
       verifiedAt: VERIFIED_AT,
     },
     pendencias: [
-      'formato de login/worker não publicado na página da pool',
-      'software de mineração compatível com PearlHash na RTX 3060 não verificado',
+      'formato de login/worker não publicado na página da 2Miners (a Kryptex documenta WALLET.WORKER para o SRBMiner-MULTI)',
+      'compatibilidade com a RTX 3050 de 6 GB não confirmada: as fontes citam "RTX série 2000 e mais novas" e não informam a VRAM mínima',
+      'minerador para Windows (SRBMiner-MULTI) citado pela Kryptex, sem fonte oficial de download nem hash publicado verificados',
     ],
   },
   {
@@ -70,7 +72,7 @@ export const CATALOG: CoinCandidate[] = [
       'algoritmo diverge: 2Miners informa Poseidon2, WhatToMine informa QPoW',
       'na WhatToMine a sigla QTC é da Qubitcoin; a Quantus aparece como QUANTUS',
       'formato de login/worker não publicado na página da pool',
-      'software de mineração compatível na RTX 3060 não verificado',
+      'software de mineração compatível com a RTX 3050 não verificado',
     ],
   },
   {

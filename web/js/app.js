@@ -5,7 +5,7 @@ import { Office, STATE_COLORS } from './office.js';
 const STATES = ['operacional', 'ocioso', 'aguardando', 'erro', 'bloqueado', 'desconectado'];
 const STATE_LABEL = { operacional: 'Operacional', ocioso: 'Ocioso', aguardando: 'Aguardando', erro: 'Erro', bloqueado: 'Bloqueado', desconectado: 'Desconectado' };
 const MODE_LABEL = { continuous: 'Contínuo', scheduled: 'Agendado', event: 'Por evento' };
-const MATURITY_LABEL = { stub: 'esboço', simulado: 'validado em simulação', validado: 'validado' };
+const MATURITY_LABEL = { stub: 'PARCIALMENTE IMPLEMENTADO', simulado: 'IMPLEMENTADO, MAS NÃO VALIDADO', validado: 'IMPLEMENTADO E TESTADO' };
 
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -56,6 +56,15 @@ function fmtValue(m) {
   return v.toLocaleString('pt-BR', { maximumFractionDigits: digits, minimumFractionDigits: 0 }) + (m.unit ? ` ${esc(m.unit)}` : '');
 }
 const tag = (p) => `<span class="tag ${esc(p)}">${esc(p)}</span>`;
+// Rótulos de estado exibidos ao operador (nunca escondem erro nem ausência de dado).
+const STATE_TAG = {
+  REAL: ['real', 'REAL'], ESTIMADO: ['estimado', 'ESTIMADO'], 'DADOS DESATUALIZADOS': ['desatualizado', 'DESATUALIZADO'],
+  INDISPONÍVEL: ['indisponivel', 'INDISPONÍVEL'], ERRO: ['erro', 'ERRO'], 'NÃO IMPLEMENTADO': ['naoimpl', 'NÃO IMPLEMENTADO'],
+  'HASHRATE NÃO MEDIDO': ['indisponivel', 'HASHRATE NÃO MEDIDO'], 'POOL NÃO CONECTADA': ['indisponivel', 'POOL NÃO CONECTADA'],
+  'NENHUMA SHARE ACEITA CONFIRMADA': ['indisponivel', 'NENHUMA SHARE ACEITA CONFIRMADA'], INATIVO: ['indisponivel', 'INATIVO'],
+  'HARDWARE NÃO VERIFICADO': ['indisponivel', 'HARDWARE NÃO VERIFICADO'],
+};
+const stTag = (label) => { const [c, t] = STATE_TAG[label] ?? ['indisponivel', label]; return `<span class="tag ${c}">${esc(t)}</span>`; };
 const stateBadge = (s) => `<span class="state-badge"><i style="background:${STATE_COLORS[s] ?? '#888'}"></i>${esc(STATE_LABEL[s] ?? s)}</span>`;
 
 function toast(msg) {
@@ -135,11 +144,14 @@ function renderEvidence() {
     <div class="lvl">Nível ${e.level} de 5 · ${esc(e.label)}</div>
     <p>${esc(e.statement)}</p>
     <div class="steps${e.simulated ? ' sim' : ''}">${e.steps.map((x) => `<i class="${x.met ? 'met' : ''}" title="${esc(x.label)}"></i>`).join('')}</div>`;
-  const real = Object.values(s.sources).every((v) => v !== 'simulated');
-  const anySim = Object.values(s.sources).some((v) => v === 'simulated');
+  const vals = Object.values(s.sources);
+  const anySim = vals.some((v) => v === 'simulated');
+  const anyReal = vals.some((v) => v !== 'simulated' && v !== 'none');
   const badge = $('#modeBadge');
-  badge.textContent = anySim ? (real ? 'DADOS REAIS' : Object.values(s.sources).every((v) => v === 'simulated') ? 'MODO SIMULAÇÃO' : 'MODO MISTO') : 'DADOS REAIS';
-  badge.classList.toggle('real', !anySim);
+  badge.textContent = anySim ? 'SIMULADO — SOMENTE EM TESTES' : anyReal ? (vals.includes('none') ? 'FONTES REAIS (PARCIAIS)' : 'FONTES REAIS') : 'SEM FONTES CONFIGURADAS';
+  badge.title = s.simulationRejected?.length ? `Simulação recusada em produção: ${s.simulationRejected.join(', ')}` : '';
+  badge.classList.toggle('real', !anySim && anyReal);
+  badge.classList.toggle('none', !anySim && !anyReal);
 }
 
 function renderTop() {
@@ -214,6 +226,7 @@ async function renderPanel() {
     if (kind === 'reports') return await panelReports();
     if (kind === 'risk') return await panelRisk();
     if (kind === 'pool') return await panelPool();
+    if (kind === 'mining') return await panelMining();
     if (kind === 'more') return panelMore();
   } catch (e) {
     if (e instanceof UnauthorizedError) return askToken();
@@ -336,7 +349,7 @@ async function panelActions() {
     </div>`).join('') || '<p class="empty">Nenhuma ação proposta.</p>'}</div>`);
 }
 
-const GROUPS = { miner: 'Minerador', pool: 'Pool', wallet: 'Carteira', finance: 'Finanças', profit: 'Rentabilidade (estimativas)', scenario: 'Cenários', energy: 'Energia', price: 'Preços', network: 'Rede Bitcoin', market: 'Mercado', risk: 'Risco', system: 'Sistema', net: 'Rede local' };
+const GROUPS = { gpu: 'GPU (nvidia-smi)', miner: 'Minerador', pool: 'Pool', wallet: 'Carteira', finance: 'Finanças', profit: 'Rentabilidade (estimativas)', scenario: 'Cenários', energy: 'Energia', price: 'Preços', network: 'Rede Bitcoin', market: 'Mercado', risk: 'Risco', system: 'Sistema', net: 'Rede local' };
 
 async function panelMetrics() {
   const metrics = await api('/api/metrics');
@@ -344,7 +357,7 @@ async function panelMetrics() {
   for (const m of metrics) (groups[m.key.split('.')[0]] ??= []).push(m);
   const order = Object.keys(GROUPS).filter((g) => groups[g]).concat(Object.keys(groups).filter((g) => !GROUPS[g]).sort());
   setPanel('MÉTRICAS ATUAIS', `${metrics.length} métricas`, `
-    <p class="note">Procedência: ${tag('real')} medido na fonte · ${tag('estimado')} calculado ou declarado · ${tag('simulado')} gerado pelo simulador · ${tag('teste')} dados de teste.</p>
+    <p class="note">Procedência: ${tag('real')} medido na fonte · ${tag('estimado')} calculado ou declarado · ${tag('simulado')} SIMULADO — somente em testes automatizados, nunca em produção · ${tag('teste')} dados de teste.</p>
     ${order.map((g) => `<div class="section"><h4>${esc(GROUPS[g] ?? g)}</h4><div class="metric-grid">${groups[g].map((m) => `<span class="k" title="${esc(m.source)} · ${fmtAgo(m.ts)}">${esc(m.key)}</span><span class="v">${fmtValue(m)} ${tag(m.provenance)}</span>`).join('')}</div></div>`).join('')}`);
 }
 
@@ -419,9 +432,92 @@ async function panelRisk() {
     <div class="section"><h4>Regras determinísticas</h4><div class="list">${r.rules.map((x) => `<div class="row"><b>${esc(x.id)}</b> ${esc(x.description)}</div>`).join('')}</div></div>`);
 }
 
+// ---------------------------------------------------------------- GPU e mineração (somente dados reais)
+const fmtWhen = (iso) => (iso ? `${fmtTime(Date.parse(iso))} (${fmtAgo(Date.parse(iso))})` : 'nunca');
+const money = (v, cur) => (typeof v === 'number' ? `${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${esc(cur)}` : '—');
+
+function ind(label, i) {
+  const val = i.valor === undefined ? '—' : typeof i.valor === 'boolean' ? (i.valor ? 'sim' : 'não') : `${esc(i.valor)}${i.unidade ? ` ${esc(i.unidade)}` : ''}`;
+  const src = [i.fonte && `fonte: ${esc(i.fonte)}`, i.atualizadoEm && `atualizado ${fmtWhen(i.atualizadoEm)}`, i.observacao && esc(i.observacao)].filter(Boolean).join(' · ');
+  return `<div class="ind"><span class="lbl">${esc(label)}</span><span class="val">${val} ${stTag(i.estado)}</span>${src ? `<span class="src">${src}</span>` : ''}</div>`;
+}
+
+function spark(points) {
+  if (points.length < 2) return '<p class="empty">Ainda não há histórico suficiente. Nenhuma curva é desenhada sem leituras reais.</p>';
+  const xs = points.map((p) => p.ts); const ys = points.map((p) => Number(p.value));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const d = points.map((p, k) => `${k ? 'L' : 'M'}${(((p.ts - x0) / (x1 - x0 || 1)) * 300).toFixed(1)},${(42 - ((Number(p.value) - y0) / (y1 - y0 || 1)) * 38).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 300 46" preserveAspectRatio="none"><path d="${d}"/></svg><p class="meta">${points.length} leituras reais · mín ${y0} · máx ${y1}</p>`;
+}
+
+async function panelMining() {
+  const [gpu, mining, energy, auto, hTemp, hPow] = await Promise.all([
+    api('/api/gpu'), api('/api/mining/state'), api('/api/energy'), api('/api/auto-mining'),
+    api('/api/metrics/history?key=gpu.temperature_c&limit=120'), api('/api/metrics/history?key=gpu.power_w&limit=120'),
+  ]);
+  const g = gpu.gpus?.[0];
+  const gstate = gpu.status === 'ok' ? 'REAL' : gpu.status === 'desatualizado' ? 'DADOS DESATUALIZADOS' : gpu.status === 'erro_leitura' ? 'ERRO' : 'INDISPONÍVEL';
+  const gv = (label, v, unit) => ind(label, v === null || v === undefined ? { estado: g ? 'INDISPONÍVEL' : gstate, observacao: g ? 'campo não suportado pelo driver' : undefined } : { estado: 'REAL', valor: v, unidade: unit, fonte: 'nvidia-smi', atualizadoEm: gpu.coletadoEm });
+  const I = mining.indicadores;
+  const cur = energy.moeda;
+  const em = (name, m) => `<div class="ind"><span class="lbl">${esc(name)}</span><span class="val">${m.disponivel ? `${money(m.diario, cur)}/dia · ${money(m.mensal, cur)}/mês ${stTag('ESTIMADO')}` : stTag('INDISPONÍVEL')}</span><span class="src">${esc(m.disponivel ? `${m.base} · escopo: ${m.escopo}` : m.motivo)}</span></div>`;
+  const coins = auto.moedas.map((c) => c.eligible && c.net
+    ? `<div class="ind"><span class="lbl">${esc(c.symbol)} · ${esc(c.algorithm)}</span><span class="val">${money(c.net.netDay, auto.moeda)}/dia ${stTag('ESTIMADO')}</span><span class="src">receita ${money(c.net.grossDay, auto.moeda)} − taxas ${money(c.net.poolFeeDay + c.net.minerFeeDay, auto.moeda)} − energia ${money(c.net.energyDay, auto.moeda)} − outros ${money(c.net.otherDay, auto.moeda)} · fonte ${esc(c.quoteSource)} · dado de ${c.quoteAgeMin} min</span></div>`
+    : `<div class="ind"><span class="lbl">${esc(c.symbol)} · ${esc(c.algorithm)}</span><span class="val">${stTag('INDISPONÍVEL')}</span><span class="src">${esc(c.reason)}</span></div>`).join('');
+  setPanel('HARDWARE E MINERAÇÃO', 'GPU e Mineração', `
+    <div class="banner${mining.estado === 'DESATIVADA' ? ' off' : ''}">MINERAÇÃO: ${esc(mining.estado)} · desde ${fmtWhen(mining.desde)}</div>
+    <div class="section"><h4>GPU ${stTag(gpu.hardware)} ${stTag(gstate)}</h4>
+      <p class="meta">${esc(gpu.mensagem)} Última leitura bem-sucedida: ${fmtWhen(gpu.coletadoEm)} · última tentativa: ${fmtWhen(gpu.consultadoEm)}.</p>
+      ${gv('Modelo', g?.name)}${gv('Driver', g?.driverVersion)}${gv('Memória total', g?.memoryTotalMiB, 'MiB')}${gv('Memória usada', g?.memoryUsedMiB, 'MiB')}
+      ${gv('Utilização', g?.utilizationPct, '%')}${gv('Temperatura', g?.temperatureC, '°C')}${gv('Consumo instantâneo (somente GPU)', g?.powerW, 'W')}${gv('Limite de potência', g?.powerLimitW, 'W')}
+    </div>
+    <div class="section"><h4>Histórico real da GPU</h4><p class="meta">Temperatura (°C)</p>${spark(hTemp)}<p class="meta">Consumo da GPU (W)</p>${spark(hPow)}</div>
+    <div class="section"><h4>Indicadores de mineração (independentes)</h4>
+      ${ind('Processo do minerador ativo', I.processoAtivo)}${ind('GPU em utilização', I.gpuEmUso)}${ind('Hashrate local medido', I.hashrateLocal)}${ind('Worker conectado à pool', I.workerConectado)}
+      ${ind('Shares aceitas', I.sharesAceitas)}${ind('Shares rejeitadas', I.sharesRejeitadas)}${ind('Saldo informado pela pool', I.saldoConfirmado)}${ind('Pagamentos confirmados', I.pagamentosConfirmados)}
+    </div>
+    <div class="section"><h4>Custo de energia · modo ${esc(energy.modo)}</h4>
+      ${em('A — informado pelo operador', energy.informado)}${em('B — medido durante mineração', energy.medido)}
+      <p class="meta">Usado no lucro: ${energy.usadoNoLucro ? esc(energy.usadoNoLucro) : 'nenhum (custo indisponível)'}. Os dois métodos nunca são somados.</p>
+      ${energy.avisos.map((a) => `<p class="note">${esc(a)}</p>`).join('')}
+    </div>
+    <div class="section"><h4>Rentabilidade (${esc(auto.periodo)}, ${esc(auto.moeda)})</h4>
+      <div class="banner">${esc(auto.rentabilidade)}</div>${coins}
+      <p class="meta">Fonte: ${esc(auto.fonteMercado)}${auto.fonteStatus?.consultadoEm ? ` · consultada ${fmtWhen(auto.fonteStatus.consultadoEm)}` : ''}${auto.fonteStatus?.cotacaoBtc ? ` · cotação BTC: ${esc(auto.fonteStatus.cotacaoBtc.fonte)}, ${fmtWhen(auto.fonteStatus.cotacaoBtc.atualizadoEm)}` : ''}. O painel nunca garante lucro.</p>
+    </div>
+    <div class="section"><h4>Teste controlado</h4>
+      <div class="form-row"><label>Moeda <select id="tCoin">${auto.moedas.map((c) => `<option>${esc(c.symbol)}</option>`).join('') || '<option>PRL</option>'}</select></label>
+        <label>Duração (min) <input id="tDur" type="number" min="1" max="30" value="5" style="width:64px"></label></div>
+      <div class="btn-row"><button class="btn" data-mining="check">Verificar pré-condições</button><button class="btn primary" data-mining="start">INICIAR TESTE</button><button class="btn danger" data-mining="stop">INTERROMPER</button></div>
+      <div id="tResult" class="checks list"></div>
+    </div>
+    <div class="section"><h4>Transições de estado</h4><div class="list">${mining.historico.slice().reverse().map((t) => `<div class="row"><b>${esc(t.from)} → ${esc(t.to)}</b> · ${fmtTime(t.at)} · ${esc(t.origem)}: ${esc(t.motivo)}</div>`).join('') || '<p class="empty">Sem transições.</p>'}</div></div>`);
+}
+
+function renderChecks(r) {
+  const box = $('#tResult');
+  if (!box) return;
+  const head = r.error ? `<p class="note">${esc(r.error)}</p>` : '';
+  box.innerHTML = head + (r.checks ?? []).map((c) => `<div class="row"><span class="${c.ok ? 'ok' : 'no'}">${c.ok ? '✓' : '✗'}</span><span><b>${esc(c.item)}</b><br><span class="meta">${esc(c.detalhe)}</span></span></div>`).join('');
+}
+
+async function miningCommand(kind) {
+  const body = { coin: $('#tCoin')?.value ?? 'PRL', durationMin: Number($('#tDur')?.value ?? 5) };
+  if (kind === 'stop') { const r = await api('/api/mining/stop', { method: 'POST', allowError: true }); toast(r.mensagem ?? `Estado: ${r.estado}`); return renderPanel(); }
+  if (kind === 'check') { const r = await api('/api/mining/test/check', { method: 'POST', body, allowError: true }); renderChecks(r); toast(r.pronto ? 'Pré-condições atendidas' : 'Há pré-condições pendentes'); return; }
+  const pre = await api('/api/mining/test/check', { method: 'POST', body, allowError: true });
+  if (!pre.pronto) { renderChecks(pre); toast('Teste não iniciado: há pré-condições pendentes'); return; }
+  const lim = pre.plano?.limites ?? {};
+  const msg = `Autorizar um teste de ${body.durationMin} min com ${body.coin}?\nLimites: ${lim.temperaturaMaxC} °C (crítico ${lim.temperaturaCriticaC} °C), potência da GPU ${lim.potenciaLimiteGpuW ?? '?'} W.\nRiscos: ${(pre.plano?.riscos ?? []).join('; ')}.`;
+  if (!confirm(msg)) return;
+  const r = await api('/api/mining/test/start', { method: 'POST', body: { ...body, confirmacao: 'AUTORIZO TESTE DE MINERAÇÃO' }, allowError: true });
+  renderChecks(r);
+  toast(r.error ?? `Estado: ${r.estado}`);
+}
+
 function panelMore() {
   setPanel('MENU', 'Mais opções', `<div class="list">
-    ${[['pool', 'Pool Luxor'], ['actions', 'Ações propostas'], ['metrics', 'Métricas'], ['reports', 'Relatórios'], ['risk', 'Guardião de Risco'], ['agents', 'Lista de agentes']].map(([v, l]) => `<button class="row" data-open="${v}" style="text-align:left">${l}</button>`).join('')}
+    ${[['mining', 'GPU e Mineração'], ['pool', 'Pool Luxor'], ['actions', 'Ações propostas'], ['metrics', 'Métricas'], ['reports', 'Relatórios'], ['risk', 'Guardião de Risco'], ['agents', 'Lista de agentes']].map(([v, l]) => `<button class="row" data-open="${v}" style="text-align:left">${l}</button>`).join('')}
   </div>`);
 }
 
@@ -457,6 +553,7 @@ async function handlePanelClick(e) {
     if (d.request) { await api(`/api/requests/${d.request}`, { method: 'POST' }); toast('Solicitação enviada'); setTimeout(renderPanel, 1500); return; }
     if (d.system) return togglePause();
     if (d.luxorValidate) { t.disabled = true; toast('Consultando a Luxor (somente leitura)…'); const r = await api('/api/luxor/validate', { method: 'POST', allowError: true }); toast(r.validation ? `Luxor: ${LUXOR_STATE[r.validation.state] ?? r.validation.state}` : (r.error ?? 'falhou')); await refreshSummary(); return renderPanel(); }
+    if (d.mining) return miningCommand(d.mining);
     if (d.open) return openPanel(d.open);
     if (d.filterDept) { const id = Number(d.filterDept); st.office.filter.dept = st.office.filter.dept === id ? null : id; st.office.dirty = true; renderDirectory(); return renderPanel(); }
   } catch (err) {

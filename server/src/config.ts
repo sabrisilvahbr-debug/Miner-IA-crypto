@@ -6,6 +6,10 @@ export type MinerType = 'simulated' | 'xmrig' | 'cgminer' | 'none';
 export type SourceMode = 'simulated' | 'real' | 'none';
 
 export interface AppConfig {
+  /** production: dados simulados são proibidos. test: só para a suíte de testes automatizados. */
+  appEnv: 'production' | 'test';
+  /** Fontes que pediram "simulated" em produção e foram desligadas (motivo exibido no painel). */
+  simulationRejected: string[];
   host: string;
   port: number;
   dbPath: string;
@@ -41,9 +45,14 @@ export interface AppConfig {
 
   powerWatts?: number;
   nvidiaSmiPath?: string; // opcional: caminho absoluto do nvidia-smi (somente leitura)
+  energyCostMode: 'informado' | 'medido' | 'comparar'; // modalidade A, B ou comparação (nunca soma)
+  energyMonthlyCostLocal?: number; // modalidade A: custo mensal informado pelo operador
+  operationHoursPerDay: number;
+  energyDaysPerMonth: number;
   miningDataSource: 'whattomine' | 'none'; // fonte de rentabilidade das moedas de GPU
   miningDataMaxAgeMin: number; // dado mais velho que isso não entra no cálculo
   gpuHashrates: Record<string, number>; // GPU_HASHRATE_<SIGLA>, mesma unidade do nethash da WhatToMine
+  payoutAddresses: Record<string, string>; // PAYOUT_ADDRESS_<SIGLA>: endereço PÚBLICO de recebimento
   energyPriceKwh?: number; // moeda local (BRL)
   localCurrency: string;
 
@@ -137,26 +146,59 @@ export function gpuHashrates(env: NodeJS.ProcessEnv): Record<string, number> {
   return out;
 }
 
+/** Em produção, qualquer fonte "simulated" vira "none". Simulação existe só para os testes automatizados. */
+export function enforceNoSimulation(c: AppConfig): AppConfig {
+  if (c.appEnv === 'test') return c;
+  const rejected: string[] = [];
+  const fix = <K extends 'marketSource' | 'networkSource' | 'minerType' | 'poolSource' | 'walletSource'>(k: K, envName: string) => {
+    if (c[k] === 'simulated') {
+      rejected.push(envName);
+      (c as Record<K, string>)[k] = 'none';
+    }
+  };
+  fix('marketSource', 'MARKET_SOURCE');
+  fix('networkSource', 'NETWORK_SOURCE');
+  fix('minerType', 'MINER_TYPE');
+  fix('poolSource', 'POOL_SOURCE');
+  fix('walletSource', 'WALLET_SOURCE');
+  c.simulationRejected = rejected;
+  return c;
+}
+
+/** PAYOUT_ADDRESS_<SIGLA>: só caracteres de endereço público. Algo que pareça frase-semente (palavras com espaço) é recusado. */
+export function payoutAddresses(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    const m = /^PAYOUT_ADDRESS_([A-Z0-9]{2,12})$/.exec(k);
+    if (!m || v === undefined) continue;
+    const t = v.trim();
+    if (/^[A-Za-z0-9:._-]{10,128}$/.test(t)) out[m[1]] = t;
+  }
+  return out;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = true): AppConfig {
   if (useDotEnv) loadDotEnv();
   const dataDir = str(env, 'DATA_DIR') ?? 'data';
-  return {
+  return enforceNoSimulation({
+    appEnv: oneOf(env, 'APP_ENV', ['production', 'test'] as const, 'production'),
+    simulationRejected: [],
     host: str(env, 'HOST') ?? '127.0.0.1',
     port: num(env, 'PORT', 8050),
     dataDir,
     dbPath: str(env, 'DB_PATH') ?? `${dataDir}/office50.db`,
     apiToken: str(env, 'API_TOKEN'),
 
-    marketSource: oneOf(env, 'MARKET_SOURCE', ['simulated', 'coinbase', 'none'] as const, 'simulated'),
+    marketSource: oneOf(env, 'MARKET_SOURCE', ['simulated', 'coinbase', 'none'] as const, 'none'),
     pricePairs: list(env, 'PRICE_PAIRS', ['BTC-USD', 'BTC-BRL']),
-    networkSource: oneOf(env, 'NETWORK_SOURCE', ['simulated', 'mempool', 'none'] as const, 'simulated'),
+    networkSource: oneOf(env, 'NETWORK_SOURCE', ['simulated', 'mempool', 'none'] as const, 'none'),
 
-    minerType: oneOf(env, 'MINER_TYPE', ['simulated', 'xmrig', 'cgminer', 'none'] as const, 'simulated'),
+    minerType: oneOf(env, 'MINER_TYPE', ['simulated', 'xmrig', 'cgminer', 'none'] as const, 'none'),
     minerUrl: str(env, 'MINER_URL'),
     minerAccessToken: str(env, 'MINER_ACCESS_TOKEN'),
     minerAlgo: str(env, 'MINER_ALGO') ?? 'sha256d',
 
-    poolSource: oneOf(env, 'POOL_SOURCE', ['simulated', 'json', 'luxor', 'none'] as const, 'simulated'),
+    poolSource: oneOf(env, 'POOL_SOURCE', ['simulated', 'json', 'luxor', 'none'] as const, 'none'),
     luxorApiUrl: (str(env, 'LUXOR_API_URL') ?? 'https://app.luxor.tech/api/v2').replace(/\/$/, ''),
     luxorApiKey: str(env, 'LUXOR_API_KEY'),
     luxorCurrency: oneOf(env, 'LUXOR_CURRENCY', ['BTC', 'LTC_DOGE', 'SC', 'ZEC'] as const, 'BTC'),
@@ -170,15 +212,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
     poolStratumUrl: str(env, 'POOL_STRATUM_URL'),
     allowedPools: list(env, 'ALLOWED_POOLS'),
 
-    walletSource: oneOf(env, 'WALLET_SOURCE', ['simulated', 'mempool', 'none'] as const, 'simulated'),
+    walletSource: oneOf(env, 'WALLET_SOURCE', ['simulated', 'mempool', 'none'] as const, 'none'),
     walletBtcAddress: str(env, 'WALLET_BTC_ADDRESS'),
     allowedWallets: list(env, 'ALLOWED_WALLETS'),
 
     powerWatts: optNum(env, 'POWER_WATTS'),
     nvidiaSmiPath: str(env, 'NVIDIA_SMI_PATH'),
+    energyCostMode: oneOf(env, 'ENERGY_COST_MODE', ['informado', 'medido', 'comparar'] as const, 'comparar'),
+    energyMonthlyCostLocal: optNum(env, 'ENERGY_MONTHLY_COST'),
+    operationHoursPerDay: Math.min(24, Math.max(0, num(env, 'OPERATION_HOURS_PER_DAY', 24))),
+    energyDaysPerMonth: Math.min(31, Math.max(1, num(env, 'ENERGY_DAYS_PER_MONTH', 30))),
     miningDataSource: oneOf(env, 'MINING_DATA_SOURCE', ['whattomine', 'none'] as const, 'none'),
     miningDataMaxAgeMin: num(env, 'MINING_DATA_MAX_AGE_MIN', 15),
     gpuHashrates: gpuHashrates(env),
+    payoutAddresses: payoutAddresses(env),
     energyPriceKwh: optNum(env, 'ENERGY_PRICE_KWH'),
     localCurrency: str(env, 'LOCAL_CURRENCY') ?? 'BRL',
 
@@ -206,13 +253,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
 
     retentionDays: num(env, 'RETENTION_DAYS', 30),
     autostart: bool(env, 'AUTOSTART', true),
-  };
+  });
 }
 
-/** Configuração para testes: tudo simulado, sem rede, rápido. */
+/** Configuração para testes AUTOMATIZADOS (APP_ENV=test): fontes simuladas, sem rede, rápido. Nunca usada em produção. */
 export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
-    ...loadConfig({}, false),
+    ...loadConfig({ APP_ENV: 'test' }, false),
+    marketSource: 'simulated',
+    networkSource: 'simulated',
+    minerType: 'simulated',
+    poolSource: 'simulated',
+    walletSource: 'simulated',
     dbPath: ':memory:',
     dataDir: 'data-test',
     retryBaseMs: 1,

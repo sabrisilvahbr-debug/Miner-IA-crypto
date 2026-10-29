@@ -74,7 +74,8 @@ test('monitor: GPU lida vira dado real e atual', async () => {
   assert.equal(v.status, 'ok');
   assert.equal(v.procedencia, 'real');
   assert.equal(v.gpus?.[0].procedencia, 'real');
-  assert.equal(v.modo, 'SIMULAÇÃO');
+  assert.equal(v.mineracao, 'DESATIVADA');
+  assert.equal(v.hardware, 'VERIFICADO');
 });
 
 test('monitor: nvidia-smi ausente informa o motivo e não mostra GPU', async () => {
@@ -82,6 +83,7 @@ test('monitor: nvidia-smi ausente informa o motivo e não mostra GPU', async () 
   const m = new GpuMonitor({ runner: fakeRunner('ausente').runner, now: c.now });
   const v = await m.read();
   assert.equal(v.status, 'nvidia_smi_ausente');
+  assert.equal(v.hardware, 'HARDWARE NÃO VERIFICADO');
   assert.equal(v.gpus, null);
   assert.equal(v.procedencia, 'indisponivel');
   assert.match(v.eventos.at(-1)!.message, /nvidia-smi não encontrado/);
@@ -161,4 +163,55 @@ test('caminho do nvidia-smi: aceita só caminho absoluto com o nome correto', ()
   assert.equal(isSafeSmiPath('C:\\x\\nvidia-smi.exe; calc'), false, 'metacaracteres são recusados');
   assert.equal(isSafeSmiPath('C:\\temp\\outro.exe'), false);
   assert.throws(() => new GpuMonitor({ smiPath: '/bin/sh' }), /nvidia-smi/);
+});
+
+// ---------------- Agente 14: coleta periódica e histórico (GPU falsa, só nos testes) ----------------
+import { makeApp } from './helpers.ts';
+
+// Linha no formato da RTX 3050 de 6 GB informada pelo operador (amostra de teste, não medição).
+const RTX3050 = '0, NVIDIA GeForce RTX 3050, 591.86, 43, 17.18, 70.00, 0, 595, 6144, [N/A], P8';
+
+test('agente 14: grava leitura real da GPU com unidade "somente GPU" e horário da coleta', async () => {
+  const c = clock();
+  const gpuMonitor = new GpuMonitor({ runner: fakeRunner('custom', RTX3050).runner, now: c.now });
+  const app = makeApp({}, { gpuMonitor, now: c.now });
+  await app.runtime.runOnce(14);
+  const m = (k: string) => app.store.latestMetric(k);
+  assert.equal(m('gpu.status')?.value, 'ok');
+  assert.equal(m('gpu.name')?.value, 'NVIDIA GeForce RTX 3050');
+  assert.equal(m('gpu.memory_total_mib')?.value, 6144);
+  assert.equal(m('gpu.power_limit_w')?.value, 70);
+  assert.equal(m('gpu.power_w')?.provenance, 'real');
+  assert.equal(m('gpu.power_w')?.unit, 'W (somente GPU)');
+  assert.equal(m('gpu.temperature_c')?.ts, c.now());
+});
+
+test('agente 14: campo sem suporte não vira zero e amostra repetida não é gravada duas vezes', async () => {
+  const c = clock();
+  const { runner, calls } = fakeRunner('custom', RTX3050);
+  const app = makeApp({}, { gpuMonitor: new GpuMonitor({ runner, now: c.now }), now: c.now });
+  await app.runtime.runOnce(14);
+  await app.runtime.runOnce(14); // dentro do cache de 5 s: mesma amostra
+  assert.equal(calls.length, 1);
+  assert.equal(app.store.metricHistory('gpu.temperature_c', 10).length, 1, 'sem registro duplicado');
+  assert.equal(app.store.latestMetric('gpu.fan_pct'), undefined);
+  c.advance(31_000);
+  await app.runtime.runOnce(14);
+  assert.equal(app.store.metricHistory('gpu.temperature_c', 10).length, 2, 'nova coleta, novo registro');
+});
+
+test('agente 14: sem nvidia-smi publica o estado e nenhum valor de sensor', async () => {
+  const app = makeApp(); // ambiente de testes: nvidia-smi nunca é executado
+  await app.runtime.runOnce(14);
+  assert.equal(app.store.latestMetric('gpu.status')?.value, 'nvidia_smi_ausente');
+  assert.equal(app.store.latestMetric('gpu.temperature_c'), undefined);
+  assert.equal(app.store.latestMetric('gpu.power_w'), undefined);
+});
+
+test('agente 14: temperatura acima do limite gera alerta', async () => {
+  const c = clock();
+  const hot = RTX3050.replace(', 43,', ', 91,');
+  const app = makeApp({}, { gpuMonitor: new GpuMonitor({ runner: fakeRunner('custom', hot).runner, now: c.now }), now: c.now });
+  await app.runtime.runOnce(14);
+  assert.ok(app.store.listAlerts({ openOnly: true, limit: 10 }).some((a) => /crítica/.test(a.message)));
 });

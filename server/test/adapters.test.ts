@@ -125,12 +125,17 @@ test('.env: comentários no fim da linha e aspas', async () => {
   assert.equal(c.powerWatts, 3250);
 });
 
-test('.env.example é válido e começa em modo simulação', async () => {
+test('.env.example é válido, de produção e sem nenhuma fonte simulada', async () => {
   const { readFileSync } = await import('node:fs');
   const { parseDotEnv, loadConfig } = await import('../src/config.ts');
   const c = loadConfig(parseDotEnv(readFileSync('.env.example', 'utf8')), false);
+  assert.equal(c.appEnv, 'production');
   assert.equal(c.host, '127.0.0.1');
-  assert.equal(c.minerType, 'simulated');
+  assert.equal(c.minerType, 'none');
+  assert.equal(c.marketSource, 'coinbase');
+  assert.equal(c.poolSource, 'none');
+  assert.deepEqual(c.simulationRejected, []);
+  assert.equal(c.energyCostMode, 'comparar');
   assert.equal(c.llmEnabled, false);
   assert.equal(c.maxTempC, 80);
 });
@@ -155,4 +160,36 @@ test('.env.luxor.example: modo real com Luxor e campos de chave vazios', async (
   assert.equal(c.powerWatts, undefined);
   assert.deepEqual(c.allowedPools, ['stratum+tcp://btc.global.luxor.tech:700']);
   assert.equal(c.llmEnabled, false);
+});
+
+test('produção: fontes "simulated" são desligadas e registradas; padrão é "none"', async () => {
+  const { loadConfig } = await import('../src/config.ts');
+  const d = loadConfig({}, false);
+  assert.deepEqual([d.marketSource, d.networkSource, d.minerType, d.poolSource, d.walletSource], ['none', 'none', 'none', 'none', 'none']);
+  const c = loadConfig({ MINER_TYPE: 'simulated', POOL_SOURCE: 'simulated', MARKET_SOURCE: 'simulated' }, false);
+  assert.equal(c.minerType, 'none');
+  assert.equal(c.poolSource, 'none');
+  assert.deepEqual(c.simulationRejected.sort(), ['MARKET_SOURCE', 'MINER_TYPE', 'POOL_SOURCE']);
+  const t = loadConfig({ APP_ENV: 'test', MINER_TYPE: 'simulated' }, false);
+  assert.equal(t.minerType, 'simulated', 'simulação só no ambiente de testes');
+});
+
+test('produção: adaptadores simulados recusam ser criados mesmo se a configuração for forçada', async () => {
+  const { loadConfig } = await import('../src/config.ts');
+  const { createExternalAdapters } = await import('../src/adapters/external.ts');
+  const { createMinerAdapter } = await import('../src/adapters/miner.ts');
+  const http = createHttpClient(new RateLimiter(10), (async () => new Response('{}')) as typeof fetch);
+  const c = { ...loadConfig({}, false), marketSource: 'simulated' as const, minerType: 'simulated' as const };
+  assert.throws(() => createExternalAdapters(c, http, Date.now), /simulada recusada/);
+  assert.throws(() => createMinerAdapter(c, http, Date.now), /simulado recusado/);
+});
+
+test('PAYOUT_ADDRESS_<MOEDA>: aceita só endereço público; texto com palavras (frase-semente) é recusado', async () => {
+  const { payoutAddresses } = await import('../src/config.ts');
+  const r = payoutAddresses({
+    PAYOUT_ADDRESS_PRL: 'prl1qexemploenderecopublico0001',
+    PAYOUT_ADDRESS_BTC: 'abandon ability able about above absent absorb abstract absurd abuse access accident',
+    PAYOUT_ADDRESS_X: 'curto',
+  });
+  assert.deepEqual(r, { PRL: 'prl1qexemploenderecopublico0001' });
 });
