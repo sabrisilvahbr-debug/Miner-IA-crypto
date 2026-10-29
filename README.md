@@ -12,6 +12,10 @@ Gerenciador de mineração de criptomoedas com **50 agentes lógicos em 10 depar
 
 Requisito: **Node.js 22.13 ou mais recente**. Não há dependências para instalar.
 
+**No Windows, do jeito mais simples:** instale o Node.js LTS (https://nodejs.org), baixe o projeto e dê duplo clique em **`Iniciar-Painel.bat`**. Ele cria o `.env` para uso só neste computador (sem token), instala o necessário, confere o sistema e abre o painel. A mineração continua DESATIVADA.
+
+Pelo terminal:
+
 ```bash
 git clone https://github.com/sabrisilvahbr-debug/Miner-IA-crypto.git
 cd Miner-IA-crypto

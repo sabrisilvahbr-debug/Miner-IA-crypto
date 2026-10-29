@@ -57,23 +57,21 @@ Não foram encontrados `Math.random`, gráficos com dados fixos nem transações
 4. API aberta à rede local quando não havia `API_TOKEN`. **Corrigido.**
 5. Sem validação de origem em comandos. **Corrigido.**
 6. Hardware errado nos cálculos: o sistema usava a RTX 3060 (170 W), mas a placa é uma RTX 3050 (70 W). **Corrigido.** O custo informado de R$ 110/mês foi calculado para 170 W. Na RTX 3050, o máximo só da GPU é de cerca de R$ 45/mês (70 W, 24 h, R$ 0,90/kWh, antes de impostos). O painel mostra esse aviso.
-7. Quantus: o algoritmo diverge entre as fontes e a sigla QTC é de outra moeda na WhatToMine. A moeda está em investigação.
+7. Quantus: os nomes de algoritmo diferiam entre as fontes. **Resolvido:** a Kryptex confirma que Poseidon2 é o algoritmo QPoW, e a moeda voltou a ser avaliada (na WhatToMine, tag QUANTUS).
 8. O `tsc` não pôde ser instalado (registro do npm inacessível daqui). Veja o build abaixo.
 
 ## 6. Testes e build
 
-- `npm test`: **156 de 156** passando.
-- `npm run check:modules`: **41/41** módulos do servidor carregam sem erro.
+- `npm test`: **159 de 159** passando.
+- `npm run check:modules`: **42/42** módulos do servidor carregam sem erro.
 - `node --check` nos 4 scripts do painel: OK.
 - `npm run build` / `npm run typecheck`: **não executados aqui**, porque o `npm install` falha com `ENOTFOUND registry.npmjs.org`. Precisa ser rodado no seu computador.
 
 ## 7. Como rodar no Windows
 
-1. Instale o Node.js 22.13 ou superior.
-2. `git pull` na pasta do projeto e `copy .env.luxor.example .env`. Não é preciso abrir como administrador.
-3. `npm install` e depois `npm run build`, para conferir tipos e build.
-4. `npm test` e depois `npm start`.
-5. Abra `http://127.0.0.1:8050` → **GPU e Mineração**. Em até 30 s deve aparecer a RTX 3050 com estado **REAL** e a sua leitura atual.
+1. Instale o Node.js LTS (22.13 ou superior).
+2. Dê duplo clique em `Iniciar-Painel.bat`. Ele cria o `.env` (uso local, sem token), instala as dependências, roda o build e abre o navegador.
+3. Abra `http://127.0.0.1:8050` → **GPU e Mineração**. Em até 30 s deve aparecer a RTX 3050 com estado **REAL** e a sua leitura atual.
 
 ## 8. Próximos passos para um teste curto
 

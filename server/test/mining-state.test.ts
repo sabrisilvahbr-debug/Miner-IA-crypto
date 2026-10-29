@@ -149,7 +149,7 @@ test('teste: hoje nunca fica pronto — falta minerador, compatibilidade e login
 
 test('teste: moeda em investigação e GPU ausente aparecem como falhas', () => {
   const noGpu: GpuView = { ...okGpu, status: 'nvidia_smi_ausente', hardware: 'HARDWARE NÃO VERIFICADO', gpus: null, mensagem: 'nvidia-smi não encontrado' };
-  const r = testChecklist({ req: { coin: 'QTC', durationMin: 5 }, gpu: noGpu, allowedPools: [], payoutAddresses: {}, minerIntegrated: false, maxTempC: 80, criticalTempC: 90 });
+  const r = testChecklist({ req: { coin: 'EPIC', durationMin: 5 }, gpu: noGpu, allowedPools: [], payoutAddresses: {}, minerIntegrated: false, maxTempC: 80, criticalTempC: 90 });
   assert.equal(r.checks.find((c) => c.item === 'GPU verificada')!.ok, false);
   assert.match(r.checks.find((c) => c.item.startsWith('Moeda'))!.detalhe, /investigação/);
 });

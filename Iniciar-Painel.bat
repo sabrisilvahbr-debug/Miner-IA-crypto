@@ -1,5 +1,5 @@
 @echo off
-REM Abre o painel AI CRYPTO MINER no seu computador. Mineração continua DESATIVADA.
+REM Abre o painel AI CRYPTO MINER no seu computador. Mineracao continua DESATIVADA.
 chcp 65001 >nul
 title AI CRYPTO MINER - Painel
 cd /d "%~dp0"
@@ -7,14 +7,16 @@ cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (
   echo Node.js nao encontrado.
-  echo Instale a versao 22.13 ou superior em https://nodejs.org e rode este arquivo de novo.
+  echo Instale a versao LTS em https://nodejs.org, feche esta janela e abra este arquivo de novo.
   pause
   exit /b 1
 )
 
-if not exist ".env" (
-  echo Criando arquivo de configuracao .env a partir do modelo...
-  copy ".env.luxor.example" ".env" >nul
+call node --experimental-strip-types --disable-warning=ExperimentalWarning server\src\tools\setup-env.ts
+if errorlevel 1 (
+  echo Falha ao preparar o .env. Veja a mensagem acima.
+  pause
+  exit /b 1
 )
 
 if not exist "node_modules" (

@@ -7,7 +7,7 @@
 | Moeda | Algoritmo | Pool (fonte) | Situação |
 |---|---|---|---|
 | Pearl (PRL) | PearlHash | `stratum+tcp://prl.2miners.com:1818` ([2Miners](https://2miners.com/prl-mining-pool)) | Pool e algoritmo conferidos. Compatibilidade com a RTX 3050 de 6 GB, minerador e login ainda não comprovados (ver `docs/INTEGRACOES-GPU.md`). |
-| Quantus (QTC) | Poseidon2 (2Miners) × QPoW (WhatToMine) | `stratum+tcp://qtc.2miners.com:3636` ([2Miners](https://2miners.com/qtc-mining-pool)) | A INVESTIGAR desde 2026-10-29: o algoritmo diverge entre as fontes, e na WhatToMine a sigla QTC é de outra moeda (Qubitcoin). A Quantus aparece lá como QUANTUS. |
+| Quantus (QTC) | Poseidon2 (= QPoW na WhatToMine) | `stratum+tcp://qtc.2miners.com:3636` ([2Miners](https://2miners.com/qtc-mining-pool)) | Pool e algoritmo conferidos (a Kryptex confirma que Poseidon2 é o algoritmo QPoW). Na WhatToMine aparece como QUANTUS. Minerador e login não comprovados. |
 | EPIC | não verificado | — | A INVESTIGAR. Sem pool nem minerador: nunca avaliada. |
 | Tari (XTM) | não verificado | — | A INVESTIGAR. Sem pool nem minerador: nunca avaliada. |
 

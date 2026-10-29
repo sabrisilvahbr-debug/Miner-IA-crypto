@@ -15,9 +15,10 @@ const q = (symbol: string, revenueLocalDay: number, coinsPerDay = 1, ageMs = 60_
   symbol, revenueLocalDay, coinsPerDay, collectedAt: NOW - ageMs, source: 'teste',
 });
 
-test('catálogo: só a PRL é avaliada; QTC, EPIC e XTM ficam em investigação', () => {
-  assert.deepEqual(activeCandidates().map((c) => c.symbol), ['PRL']);
-  assert.equal(findCoin('QTC')?.status, 'investigar');
+test('catálogo: PRL e QTC são avaliadas; EPIC e XTM ficam em investigação', () => {
+  assert.deepEqual(activeCandidates().map((c) => c.symbol), ['PRL', 'QTC']);
+  assert.equal(findCoin('QTC')?.status, 'pool_validada');
+  assert.equal(findCoin('QTC')?.wtmAlgorithm, 'QPoW', 'Kryptex: Poseidon2 é o algoritmo QPoW');
   assert.equal(findCoin('QTC')?.wtmTag, 'QUANTUS', 'na WhatToMine a Quantus é QUANTUS; QTC é outra moeda');
   assert.equal(findCoin('epic')?.status, 'investigar');
   assert.equal(findCoin('XTM')?.status, 'investigar');
@@ -140,7 +141,7 @@ test('simulação: cenário com queda da PRL troca para outra candidata e conta 
 });
 
 test('simulação: nunca usa moeda fora do catálogo validado', () => {
-  const r = runSimulation([{ now: NOW, quotes: [q('EPIC', 999), q('XTM', 999), q('QTC', 999)] }], cfg);
+  const r = runSimulation([{ now: NOW, quotes: [q('EPIC', 999), q('XTM', 999), q('RVN', 999)] }], cfg);
   assert.equal(r.records[0].decision.action, 'aguardar_dados');
 });
 

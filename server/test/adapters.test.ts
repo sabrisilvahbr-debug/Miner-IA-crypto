@@ -153,7 +153,7 @@ test('.env.luxor.example: modo real com Luxor e campos de chave vazios', async (
   assert.equal(c.luxorSubaccount, undefined);
   assert.equal(c.minerType, 'none');
   assert.equal(c.minerUrl, undefined);
-  assert.equal(c.host, '0.0.0.0');
+  assert.equal(c.host, '127.0.0.1');
   assert.equal(c.marketSource, 'coinbase');
   assert.equal(c.networkSource, 'mempool');
   assert.equal(c.walletSource, 'none');
