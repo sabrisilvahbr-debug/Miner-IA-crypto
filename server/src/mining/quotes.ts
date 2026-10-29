@@ -1,5 +1,5 @@
 // Monta a cotação de rentabilidade (MarketQuote) a partir de dados reais: WhatToMine + cotação BTC na moeda local
-// + hashrate da RTX 3060 informado pelo operador. Se faltar qualquer peça, devolve o motivo e nenhuma cotação.
+// + hashrate da RTX 3050 informado pelo operador. Se faltar qualquer peça, devolve o motivo e nenhuma cotação.
 //
 // Fórmula (fração do hashrate da rede): moedas/dia = (hashrate / nethash) × recompensa × 86400 / tempo_de_bloco
 // O resultado é sempre ESTIMADO. O hashrate precisa estar na mesma unidade do "nethash" da WhatToMine,
@@ -36,7 +36,7 @@ export function buildQuote(
     return { reason: `algoritmo diverge: catálogo ${coin.wtmAlgorithm}, WhatToMine ${w.algorithm}` };
   }
   if (w.lagging) return { reason: 'WhatToMine marca os dados desta moeda como atrasados' };
-  if (!(hashrate && hashrate > 0)) return { reason: `hashrate da RTX 3060 não informado (GPU_HASHRATE_${coin.symbol})` };
+  if (!(hashrate && hashrate > 0)) return { reason: `hashrate da RTX 3050 não informado (GPU_HASHRATE_${coin.symbol})` };
   if (!btc) return { reason: 'cotação do BTC em moeda local indisponível' };
   if (btc.provenance !== 'real') return { reason: `cotação do BTC não é real (${btc.provenance}); não usada` };
   const coinsPerDay = expectedCoinsPerDay(hashrate, w.nethash, w.blockReward, w.blockTimeS);

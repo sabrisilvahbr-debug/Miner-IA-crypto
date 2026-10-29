@@ -20,12 +20,16 @@ export interface GpuEvent {
 }
 
 export interface GpuView {
-  modo: 'SIMULAÇÃO';
+  /** A mineração nunca é iniciada por este módulo. */
+  mineracao: 'DESATIVADA';
+  /** "HARDWARE NÃO VERIFICADO" até a primeira leitura bem-sucedida do nvidia-smi neste processo. */
+  hardware: 'VERIFICADO' | 'HARDWARE NÃO VERIFICADO';
   status: GpuStatus;
   mensagem: string;
   procedencia: 'real' | 'indisponivel';
-  coletadoEm: string | null;
+  coletadoEm: string | null; // última leitura BEM-SUCEDIDA (mesmo que agora esteja em erro)
   idadeSegundos: number | null;
+  consultadoEm: string | null; // última tentativa de leitura, com sucesso ou não
   gpus: (GpuReading & { procedencia: 'real' })[] | null; // null quando não há leitura atual confiável
   eventos: GpuEvent[];
 }
@@ -117,6 +121,11 @@ export class GpuMonitor {
     if (changed && status !== 'ok') this.log(status === 'nvidia_smi_ausente' || status === 'erro_leitura' ? 'erro' : 'aviso', this.message);
   }
 
+  /** Momento da última leitura bem-sucedida (para não gravar a mesma amostra duas vezes no histórico). */
+  lastSampleAt(): number | undefined {
+    return this.lastOk?.at;
+  }
+
   view(): GpuView {
     const age = this.lastOk ? this.now() - this.lastOk.at : null;
     const stale = age !== null && age > this.staleMs;
@@ -124,12 +133,14 @@ export class GpuMonitor {
     if (stale && this.status === 'ok') this.markStale();
     const current = status === 'ok' && this.lastOk && !stale;
     return {
-      modo: 'SIMULAÇÃO',
+      mineracao: 'DESATIVADA',
+      hardware: this.lastOk ? 'VERIFICADO' : 'HARDWARE NÃO VERIFICADO',
       status,
       mensagem: status === this.status ? this.message : MESSAGES[status],
       procedencia: current ? 'real' : 'indisponivel',
       coletadoEm: this.lastOk ? new Date(this.lastOk.at).toISOString() : null,
       idadeSegundos: age === null ? null : Math.round(age / 1000),
+      consultadoEm: this.lastRead ? new Date(this.lastRead).toISOString() : null,
       gpus: current ? this.lastOk!.gpus.map((g) => ({ ...g, procedencia: 'real' as const })) : null,
       eventos: this.events.slice(-20),
     };

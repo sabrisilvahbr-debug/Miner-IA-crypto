@@ -1,4 +1,7 @@
 // Montagem da aplicação: armazenamento, barramento, Guardião, adaptadores, gateway de LLM e runtime dos agentes.
+import { MiningStateMachine, type Transition } from './mining/state.ts';
+import type { ProcessSupervisor } from './mining/process.ts';
+import { GpuMonitor } from './gpu/monitor.ts';
 import type { AppConfig } from './config.ts';
 import { Store } from './core/store.ts';
 import { EventBus } from './core/eventBus.ts';
@@ -22,6 +25,7 @@ export interface AppOptions {
   llmTransport?: LlmTransport;
   agents?: AgentDefinition[];
   overrides?: Partial<Omit<Services, 'runtime'>>;
+  gpuMonitor?: GpuMonitor;
 }
 
 export function createApp(config: AppConfig, opts: AppOptions = {}) {
@@ -51,13 +55,27 @@ export function createApp(config: AppConfig, opts: AppOptions = {}) {
     });
     ext.pool = luxor;
   }
+  // Na suíte de testes, o nvidia-smi nunca é executado: o monitor responde "ausente" a menos que o teste injete outro.
+  const gpu = opts.gpuMonitor ?? (config.appEnv === 'test'
+    ? new GpuMonitor({ now, runner: async () => { throw Object.assign(new Error('nvidia-smi não executado em testes'), { code: 'ENOENT' }); } })
+    : new GpuMonitor({ smiPath: config.nvidiaSmiPath, now }));
+  // Estado da mineração: sempre começa DESATIVADA; transições ficam no histórico e viram eventos auditáveis.
+  const mining = new MiningStateMachine({
+    now,
+    previous: store.getKV<Transition[]>('mining.transitions', []),
+    onChange: (t) => {
+      const hist = [...store.getKV<Transition[]>('mining.transitions', []), t].slice(-100);
+      store.setKV('mining.transitions', hist, now());
+      bus.publish({ type: 'mining.state', severity: t.to === 'ERRO' ? 'warn' : 'info', message: `Mineração: ${t.from} → ${t.to} (${t.origem}): ${t.motivo}`, data: { from: t.from, to: t.to, origem: t.origem } });
+    },
+  });
   const llm = new LlmGateway(store, config, now, opts.llmTransport);
   const runtime = new Runtime({ config, store, bus, guardian, logger, now });
   runtime.services = {
-    store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, ...ext, ...opts.overrides,
+    store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, gpu, ...ext, ...opts.overrides,
   } as Services;
   runtime.register(opts.agents ?? ALL_AGENTS);
-  return { config, store, bus, guardian, limiter, http, llm, runtime, logger, luxor };
+  return { config, store, bus, guardian, limiter, http, llm, runtime, logger, luxor, gpu, mining, supervisor: undefined as ProcessSupervisor | undefined };
 }
 
 export type App = ReturnType<typeof createApp>;

@@ -6,7 +6,8 @@ import { DEFAULT_SELECTOR, activeCandidates, decide, evaluate, type SelectorConf
 import { runSimulation, autoMiningSnapshot, MODE_LABEL, REEVALUATE_EVERY_MS } from '../src/mining/simulation.ts';
 
 const NOW = 1_000_000_000_000;
-const cfg: SelectorConfig = { ...DEFAULT_SELECTOR, energy: { powerW: 170, powerIsMeasured: false, tariffKwh: 0.9 } };
+// RTX 3050 no limite de 70 W, 24 h, R$ 0,90/kWh = R$ 1,512/dia (valor de teste, não medição).
+const cfg: SelectorConfig = { ...DEFAULT_SELECTOR, energyCostDay: energyCostDay(70, 0.9) };
 // Moeda fictícia só para testar trocas entre duas candidatas (a QTC está em investigação desde 2026-10-29).
 const TST = { ...findCoin('PRL')!, symbol: 'TST', name: 'Teste', wtmTag: 'TST' };
 const TWO = [findCoin('PRL')!, TST];
@@ -14,9 +15,10 @@ const q = (symbol: string, revenueLocalDay: number, coinsPerDay = 1, ageMs = 60_
   symbol, revenueLocalDay, coinsPerDay, collectedAt: NOW - ageMs, source: 'teste',
 });
 
-test('catálogo: só a PRL é avaliada; QTC, EPIC e XTM ficam em investigação', () => {
-  assert.deepEqual(activeCandidates().map((c) => c.symbol), ['PRL']);
-  assert.equal(findCoin('QTC')?.status, 'investigar');
+test('catálogo: PRL e QTC são avaliadas; EPIC e XTM ficam em investigação', () => {
+  assert.deepEqual(activeCandidates().map((c) => c.symbol), ['PRL', 'QTC']);
+  assert.equal(findCoin('QTC')?.status, 'pool_validada');
+  assert.equal(findCoin('QTC')?.wtmAlgorithm, 'QPoW', 'Kryptex: Poseidon2 é o algoritmo QPoW');
   assert.equal(findCoin('QTC')?.wtmTag, 'QUANTUS', 'na WhatToMine a Quantus é QUANTUS; QTC é outra moeda');
   assert.equal(findCoin('epic')?.status, 'investigar');
   assert.equal(findCoin('XTM')?.status, 'investigar');
@@ -43,9 +45,24 @@ test('energia: 120 W a R$ 0,90/kWh por 30 dias dá cerca de R$ 77,76/mês (antes
   assert.ok(Math.abs(energyCostDay(120, 0.9) * 30 - 77.76) < 1e-9);
 });
 
-test('lucro líquido: receita − taxa da pool − energia', () => {
-  const r = netDay(100, 0.01, { powerW: 170, powerIsMeasured: false, tariffKwh: 0.9 });
-  assert.ok(Math.abs(r.netDay - (100 - 1 - 3.672)) < 1e-9);
+test('lucro líquido: receita − taxas − energia − outros custos, com parcelas separadas', () => {
+  const r = netDay(100, 0.01, 1.512, 0.02, 0.5);
+  assert.equal(r.grossDay, 100);
+  assert.equal(r.poolFeeDay, 1);
+  assert.equal(r.minerFeeDay, 2);
+  assert.equal(r.energyDay, 1.512);
+  assert.equal(r.otherDay, 0.5);
+  assert.ok(Math.abs(r.netDay - (100 - 1 - 2 - 1.512 - 0.5)) < 1e-9);
+});
+
+test('energia: RTX 3050 no limite de 70 W custa no máximo R$ 45,36/mês a R$ 0,90/kWh (somente GPU)', () => {
+  assert.ok(Math.abs(energyCostDay(70, 0.9) * 30 - 45.36) < 1e-9);
+});
+
+test('avaliação: sem custo de energia, a rentabilidade não é calculável', () => {
+  const e = evaluate(findCoin('PRL')!, q('PRL', 50), { ...DEFAULT_SELECTOR }, NOW);
+  assert.equal(e.eligible, false);
+  assert.match(e.reason, /RENTABILIDADE NÃO CALCULÁVEL — FALTA DE DADOS REAIS/);
 });
 
 test('pagamento: sem produção, tempo infinito; com produção, leva em conta a taxa', () => {
@@ -124,14 +141,14 @@ test('simulação: cenário com queda da PRL troca para outra candidata e conta 
 });
 
 test('simulação: nunca usa moeda fora do catálogo validado', () => {
-  const r = runSimulation([{ now: NOW, quotes: [q('EPIC', 999), q('XTM', 999), q('QTC', 999)] }], cfg);
+  const r = runSimulation([{ now: NOW, quotes: [q('EPIC', 999), q('XTM', 999), q('RVN', 999)] }], cfg);
   assert.equal(r.records[0].decision.action, 'aguardar_dados');
 });
 
-test('painel: sem fonte de mercado, mostra indisponível e aviso de simulação', () => {
+test('painel: sem fonte de mercado, mostra INDISPONÍVEL e que a mineração está desativada', () => {
   const snap = autoMiningSnapshot(cfg, [], NOW);
-  assert.equal(snap.modo, 'SIMULAÇÃO');
-  assert.match(snap.fonteMercado, /indisponível/);
+  assert.equal(snap.modo, 'RECOMENDAÇÃO — MINERAÇÃO DESATIVADA');
+  assert.match(snap.fonteMercado, /INDISPONÍVEL/);
   assert.equal(snap.decisao.action, 'aguardar_dados');
   assert.match(snap.avisoOperacao, /nenhum minerador é iniciado/);
 });

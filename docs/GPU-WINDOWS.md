@@ -1,12 +1,13 @@
 # Monitoramento da GPU no Windows — SOMENTE LEITURA
 
-**Modo atual: SIMULAÇÃO.** O monitor lê a GPU pelo `nvidia-smi`. Ele **não inicia, não para e não configura nenhum minerador**. A mineração real continua desativada e exigirá aprovação explícita em uma etapa posterior.
+**Mineração: DESATIVADA.** O monitor lê a GPU real pelo `nvidia-smi`, a cada 30 segundos (agente 14), e grava o histórico. Ele **não inicia, não para e não configura nenhum minerador**. A mineração real continua desativada e exigirá aprovação explícita em uma etapa posterior.
 
 ## O que já existe
 
 - `server/src/gpu/nvidiaSmi.ts`: comando fixo do `nvidia-smi` (sem shell, sem entrada do usuário), interpretação da saída CSV e tratamento de erros.
 - `server/src/gpu/monitor.ts`: cache de 5 segundos, marcação de dados antigos (mais de 30 segundos) e registro de eventos.
-- `GET /api/gpu`: retorna o estado da GPU. Protegido pelo `API_TOKEN`, como o restante do painel.
+- `GET /api/gpu`: retorna o estado da GPU. Protegido pelo `API_TOKEN`, como o restante do painel. Sem `API_TOKEN`, só o próprio computador é atendido.
+- Painel **GPU e Mineração**: valores com unidade, fonte, horário da última leitura bem-sucedida e estado (REAL, DESATUALIZADO, INDISPONÍVEL, ERRO). O gráfico usa só o histórico gravado; sem leituras, mostra um aviso em vez de uma curva.
 
 Não há agente separado. O painel e o monitor rodam no mesmo processo, no seu computador. Um processo separado só faz sentido quando houver controle de mineração, na fase seguinte.
 
@@ -18,7 +19,7 @@ Comando executado, com argumentos fixos:
 nvidia-smi --query-gpu=index,name,driver_version,temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used,memory.total,fan.speed,pstate --format=csv,noheader,nounits
 ```
 
-Os nomes dos campos são os usados pelo `nvidia-smi` e devem ser conferidos no seu driver com `nvidia-smi --help-query-gpu`. **Isso ainda não foi testado em um computador Windows com RTX 3060.**
+Os nomes dos campos são os usados pelo `nvidia-smi` e devem ser conferidos no seu driver com `nvidia-smi --help-query-gpu`. **Isso ainda não foi testado em um computador Windows com RTX 3050.**
 
 ## Procedência dos dados
 
@@ -36,7 +37,7 @@ Os nomes dos campos são os usados pelo `nvidia-smi` e devem ser conferidos no s
    ```powershell
    nvidia-smi
    ```
-   Deve listar a GeForce RTX 3060. Se o comando não existir, instale o driver pelo site da NVIDIA.
+   Deve listar a GeForce RTX 3050. Se o comando não existir, instale o driver pelo site da NVIDIA.
 2. Veja os campos disponíveis:
    ```powershell
    nvidia-smi --help-query-gpu
@@ -64,7 +65,6 @@ Os nomes dos campos são os usados pelo `nvidia-smi` e devem ser conferidos no s
 
 ## Limitações
 
-- Nada disso foi executado em um Windows com a RTX 3060. Os testes usam um executor falso e não chamam o `nvidia-smi` real.
+- O sistema ainda **não rodou** no seu Windows. Os valores da RTX 3050 que você enviou (6144 MiB, 70 W, driver 591.86) só servem de referência e aparecem em testes como amostra; o painel mostra **HARDWARE NÃO VERIFICADO** até a primeira leitura real feita pelo próprio sistema.
 - Neste ambiente de desenvolvimento não existe `nvidia-smi`. O comportamento real verificado aqui é o de "nvidia-smi ausente".
-- O painel visual ainda não exibe esses dados; a informação está disponível pela API.
-- Consumo medido (`power.draw`) não substitui a estimativa de energia usada no cálculo de lucro até ser validado no seu equipamento.
+- O consumo lido fora de mineração (ex.: 17 W em repouso) **não** é usado como consumo de mineração. A modalidade B do custo de energia só usa leituras feitas durante uma sessão de mineração, que ainda não existe.
