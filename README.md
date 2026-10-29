@@ -17,7 +17,7 @@ npm start
 
 Abra `http://127.0.0.1:8050`.
 
-Testes: `npm test` (56 testes). Verificação de tipos: `npm install && npm run typecheck`.
+Testes: `npm test` (66 testes). Build e verificação: `npm run build`. Verificação de tipos: `npm install && npm run typecheck`.
 
 ## Usar no iPhone
 
@@ -37,7 +37,8 @@ Por padrão todas as fontes estão em `simulated`: os números são de demonstra
 | Rede Bitcoin | `NETWORK_SOURCE=mempool` | dificuldade, altura, taxas (mempool.space) |
 | ASIC de Bitcoin | `MINER_TYPE=cgminer`, `MINER_URL=tcp://IP:4028` | API cgminer/bmminer, somente leitura |
 | XMRig (CPU/GPU) | `MINER_TYPE=xmrig`, `MINER_URL=http://127.0.0.1:8080`, `MINER_ACCESS_TOKEN` | permite pausar/retomar após aprovação |
-| Pool | `POOL_SOURCE=json`, `POOL_STATS_URL` e caminhos dos campos | funciona com qualquer pool que tenha endpoint JSON |
+| **Pool Luxor (principal)** | `POOL_SOURCE=luxor`, `LUXOR_API_KEY`, `LUXOR_SUBACCOUNT` | API oficial, somente leitura. Passo a passo em [`docs/LUXOR.md`](docs/LUXOR.md) e validação com `npm run luxor:check` |
+| Outra pool | `POOL_SOURCE=json`, `POOL_STATS_URL` e caminhos dos campos | funciona com qualquer pool que tenha endpoint JSON |
 | Recebimentos | `WALLET_SOURCE=mempool`, `WALLET_BTC_ADDRESS`, `ALLOWED_WALLETS` | ex.: endereço de depósito BTC da sua conta Coinbase |
 | Energia | `POWER_WATTS`, `ENERGY_PRICE_KWH` | necessário para resultado líquido estimado |
 
@@ -59,6 +60,7 @@ Arquitetura, mapa de dependências, modos de execução, recursos e modelo de da
 
 ## Limitações conhecidas
 
+- **Integração Luxor ainda não validada com a conta real**: o código e os testes estão prontos, mas a consulta autenticada precisa ser feita no seu computador (`npm run luxor:check`). Veja [`docs/LUXOR.md`](docs/LUXOR.md).
 - **Nenhum adaptador foi validado com equipamento real.** XMRig, cgminer, Coinbase, mempool.space e a pool JSON foram testados com respostas simuladas; os agentes que dependem deles estão marcados como `simulado` até serem validados com seu hardware e suas contas.
 - O agente 48 (Telegram) está como `stub`: implementado, mas não testado com um bot real.
 - A API de resumo do XMRig e a do cgminer não informam temperatura de forma padronizada; nesses casos o Monitor Térmico fica ocioso e a regra de temperatura não atua.

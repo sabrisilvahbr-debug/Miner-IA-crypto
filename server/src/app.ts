@@ -9,6 +9,7 @@ import { Runtime } from './core/runtime.ts';
 import { createLogger, type Logger } from './core/logger.ts';
 import { MinerService, createMinerAdapter, type MinerAdapter } from './adapters/miner.ts';
 import { createExternalAdapters } from './adapters/external.ts';
+import { LuxorClient, LuxorPool, type LuxorValidation } from './adapters/luxor.ts';
 import { ALL_AGENTS } from './agents/index.ts';
 import type { AgentDefinition } from './core/types.ts';
 import type { Services } from './core/services.ts';
@@ -34,13 +35,29 @@ export function createApp(config: AppConfig, opts: AppOptions = {}) {
   const adapter = opts.minerAdapter ?? createMinerAdapter(config, http, now);
   guardian.minerProvenance = adapter.provenance;
   const ext = createExternalAdapters(config, http, now);
+  let luxor: LuxorPool | undefined;
+  if (config.poolSource === 'luxor') {
+    const client = new LuxorClient({ baseUrl: config.luxorApiUrl, apiKey: config.luxorApiKey, fetchImpl: opts.fetchImpl, limiter });
+    luxor = new LuxorPool(client, config, {
+      now,
+      initial: store.getKV<LuxorValidation | undefined>('luxor.validation', undefined),
+      onValidation: (v) => {
+        const prev = store.getKV<LuxorValidation | undefined>('luxor.validation', undefined);
+        store.setKV('luxor.validation', v, now());
+        if (prev?.state !== v.state || prev?.dataVerified !== v.dataVerified) {
+          bus.publish({ type: 'pool.luxor_validation', severity: v.state === 'validada' ? 'info' : 'warn', message: `Luxor: ${v.state}${v.dataVerified ? ' (dados conferidos)' : ''} · ${v.message}`, data: { state: v.state, httpStatus: v.httpStatus } });
+        }
+      },
+    });
+    ext.pool = luxor;
+  }
   const llm = new LlmGateway(store, config, now, opts.llmTransport);
   const runtime = new Runtime({ config, store, bus, guardian, logger, now });
   runtime.services = {
     store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, ...ext, ...opts.overrides,
   } as Services;
   runtime.register(opts.agents ?? ALL_AGENTS);
-  return { config, store, bus, guardian, limiter, llm, runtime, logger };
+  return { config, store, bus, guardian, limiter, llm, runtime, logger, luxor };
 }
 
 export type App = ReturnType<typeof createApp>;

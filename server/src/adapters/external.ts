@@ -238,7 +238,7 @@ export function createExternalAdapters(c: AppConfig, http: HttpClient, now: () =
   return {
     market: c.marketSource === 'coinbase' ? new CoinbaseMarket(http) : c.marketSource === 'simulated' ? new SimulatedMarket(now) : new NoMarket(),
     network: c.networkSource === 'mempool' ? new MempoolNetwork(http) : c.networkSource === 'simulated' ? new SimulatedNetwork(now) : new NoNetwork(),
-    pool: c.poolSource === 'json' ? new JsonPool(http, c) : c.poolSource === 'simulated' ? new SimulatedPool(now) : new NoPool(),
+    pool: (c.poolSource === 'json' ? new JsonPool(http, c) : c.poolSource === 'simulated' ? new SimulatedPool(now) : new NoPool()) as PoolAdapter, // 'luxor' é montada em app.ts
     wallet: c.walletSource === 'mempool' ? new MempoolWallet(http, c.walletBtcAddress) : c.walletSource === 'simulated' ? new SimulatedWallet(now) : new NoWallet(),
   };
 }

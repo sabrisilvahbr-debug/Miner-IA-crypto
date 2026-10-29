@@ -3,7 +3,7 @@
 import type { AgentDefinition } from '../core/types.ts';
 import { HOUR, MIN, SEC, metric } from './common.ts';
 
-const SECRET_VARS = ['API_TOKEN', 'MINER_ACCESS_TOKEN', 'ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN'] as const;
+const SECRET_VARS = ['API_TOKEN', 'MINER_ACCESS_TOKEN', 'ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'LUXOR_API_KEY'] as const;
 
 export const risco: AgentDefinition[] = [
   {
@@ -56,7 +56,7 @@ export const risco: AgentDefinition[] = [
     async run(ctx) {
       const c = ctx.config;
       const values: Record<(typeof SECRET_VARS)[number], string | undefined> = {
-        API_TOKEN: c.apiToken, MINER_ACCESS_TOKEN: c.minerAccessToken, ANTHROPIC_API_KEY: c.anthropicApiKey, TELEGRAM_BOT_TOKEN: c.telegramBotToken,
+        API_TOKEN: c.apiToken, MINER_ACCESS_TOKEN: c.minerAccessToken, ANTHROPIC_API_KEY: c.anthropicApiKey, TELEGRAM_BOT_TOKEN: c.telegramBotToken, LUXOR_API_KEY: c.luxorApiKey,
       };
       const configured = SECRET_VARS.filter((k) => values[k]);
       const weak = (['API_TOKEN', 'MINER_ACCESS_TOKEN'] as const).filter((k) => values[k] && values[k]!.length < 16);

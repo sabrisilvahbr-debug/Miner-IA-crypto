@@ -21,7 +21,13 @@ export interface AppConfig {
   minerAccessToken?: string;
   minerAlgo: string; // sha256d | randomx | ...
 
-  poolSource: 'simulated' | 'json' | 'none';
+  poolSource: 'simulated' | 'json' | 'luxor' | 'none';
+  luxorApiUrl: string;
+  luxorApiKey?: string; // segredo: só no backend, nunca enviado ao navegador
+  luxorCurrency: 'BTC' | 'LTC_DOGE' | 'SC' | 'ZEC';
+  luxorSubaccount?: string;
+  luxorSiteId?: string;
+  luxorWorkerName?: string;
   poolStatsUrl?: string;
   poolBalancePath?: string;
   poolPaidPath?: string;
@@ -132,7 +138,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
     minerAccessToken: str(env, 'MINER_ACCESS_TOKEN'),
     minerAlgo: str(env, 'MINER_ALGO') ?? 'sha256d',
 
-    poolSource: oneOf(env, 'POOL_SOURCE', ['simulated', 'json', 'none'] as const, 'simulated'),
+    poolSource: oneOf(env, 'POOL_SOURCE', ['simulated', 'json', 'luxor', 'none'] as const, 'simulated'),
+    luxorApiUrl: (str(env, 'LUXOR_API_URL') ?? 'https://app.luxor.tech/api/v2').replace(/\/$/, ''),
+    luxorApiKey: str(env, 'LUXOR_API_KEY'),
+    luxorCurrency: oneOf(env, 'LUXOR_CURRENCY', ['BTC', 'LTC_DOGE', 'SC', 'ZEC'] as const, 'BTC'),
+    luxorSubaccount: str(env, 'LUXOR_SUBACCOUNT'),
+    luxorSiteId: str(env, 'LUXOR_SITE_ID'),
+    luxorWorkerName: str(env, 'LUXOR_WORKER_NAME'),
     poolStatsUrl: str(env, 'POOL_STATS_URL'),
     poolBalancePath: str(env, 'POOL_BALANCE_PATH'),
     poolPaidPath: str(env, 'POOL_PAID_PATH'),
