@@ -78,7 +78,7 @@ export function parseDotEnv(text: string): Record<string, string> {
     if (!m) continue;
     let value = m[2];
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
-    else value = value.replace(/\s+#.*$/, '').trim();
+    else value = value.replace(/(^|\s+)#.*$/, '').trim(); // comentário no fim da linha (ou campo vazio com comentário)
     out[m[1]] = value;
   }
   return out;

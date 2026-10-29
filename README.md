@@ -12,12 +12,14 @@ Requisito: **Node.js 22.13 ou mais recente**. Não há dependências para instal
 git clone https://github.com/sabrisilvahbr-debug/Miner-IA-crypto.git
 cd Miner-IA-crypto
 cp .env.example .env      # opcional: sem .env, tudo roda em modo simulação
+# ou, para Luxor + Bitcoin com dados reais:
+# cp .env.luxor.example .env   (e preencha só os campos marcados com <-- PREENCHA)
 npm start
 ```
 
 Abra `http://127.0.0.1:8050`.
 
-Testes: `npm test` (66 testes). Build e verificação: `npm run build`. Verificação de tipos: `npm install && npm run typecheck`.
+Testes: `npm test` (67 testes). Build e verificação: `npm run build`. Verificação de tipos: `npm install && npm run typecheck`.
 
 ## Usar no iPhone
 
