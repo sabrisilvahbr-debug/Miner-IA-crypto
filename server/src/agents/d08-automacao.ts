@@ -1,5 +1,5 @@
 // Departamento 8 — Automação e manutenção (agentes 36–40)
-import { readdirSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AgentDefinition } from '../core/types.ts';
 import { HOUR, MIN, compareVersions, metric } from './common.ts';
@@ -156,8 +156,10 @@ export const automacao: AgentDefinition[] = [
       let summary = `Retenção: ${total} registro(s) removido(s)`;
       if (ctx.config.dbPath !== ':memory:') {
         const dir = join(ctx.config.dataDir, 'backups');
-        const stamp = new Date(ctx.now()).toISOString().replace(/[:T]/g, '-').slice(0, 16);
-        store.backupTo(join(dir, `office50-${stamp}.db`));
+        const stamp = new Date(ctx.now()).toISOString().replace(/[:T]/g, '-').slice(0, 19);
+        const file = join(dir, `office50-${stamp}.db`);
+        if (existsSync(file)) rmSync(file); // VACUUM INTO não sobrescreve arquivos existentes
+        store.backupTo(file);
         const files = readdirSync(dir).filter((f) => f.endsWith('.db')).sort();
         for (const f of files.slice(0, Math.max(0, files.length - 7))) rmSync(join(dir, f));
         out.push(metric('backup.last_at', ctx.now(), 'real', 'backup'));

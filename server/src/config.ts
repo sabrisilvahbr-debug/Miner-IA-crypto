@@ -63,17 +63,25 @@ export interface AppConfig {
   autostart: boolean;
 }
 
+/** Lê um .env simples: CHAVE=valor, aspas opcionais e comentários (# no início ou no fim da linha). */
+export function parseDotEnv(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim().startsWith('#')) continue;
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (!m) continue;
+    let value = m[2];
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+    else value = value.replace(/\s+#.*$/, '').trim();
+    out[m[1]] = value;
+  }
+  return out;
+}
+
 function loadDotEnv(path = '.env'): void {
   if (!existsSync(path)) return;
-  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (!m || line.trim().startsWith('#')) continue;
-    const key = m[1];
-    let value = m[2];
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    if (process.env[key] === undefined) process.env[key] = value;
+  for (const [k, v] of Object.entries(parseDotEnv(readFileSync(path, 'utf8')))) {
+    if (process.env[k] === undefined) process.env[k] = v;
   }
 }
 

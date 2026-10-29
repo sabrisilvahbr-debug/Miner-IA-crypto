@@ -1,1 +1,68 @@
-# Miner-IA-crypto
+# AI CRYPTO MINER — VIRTUAL MINING OFFICE 50
+
+Gerenciador de mineração de criptomoedas com **50 agentes lógicos em 10 departamentos**, um **Guardião de Risco** com regras determinísticas e um **escritório virtual 3D** que funciona no computador e no iPhone.
+
+> **Importante:** o número de agentes não prova que há mineração. O painel mostra um **nível de evidência** (0 a 5) e só declara "mineração ativa" com shares aceitas a partir de dados reais. Nada aqui promete rentabilidade, e nenhum agente executa compras, pagamentos, saques ou negociações.
+
+## Como rodar
+
+Requisito: **Node.js 22.13 ou mais recente**. Não há dependências para instalar.
+
+```bash
+git clone https://github.com/sabrisilvahbr-debug/Miner-IA-crypto.git
+cd Miner-IA-crypto
+cp .env.example .env      # opcional: sem .env, tudo roda em modo simulação
+npm start
+```
+
+Abra `http://127.0.0.1:8050`.
+
+Testes: `npm test` (56 testes). Verificação de tipos: `npm install && npm run typecheck`.
+
+## Usar no iPhone
+
+1. No `.env`: `HOST=0.0.0.0` e `API_TOKEN=` com um token longo.
+2. No iPhone (mesma rede Wi-Fi), abra `http://IP-DO-COMPUTADOR:8050` e informe o token.
+3. No Safari, **Compartilhar → Adicionar à Tela de Início** para abrir como aplicativo.
+
+Não exponha o painel à internet sem um túnel ou VPN com HTTPS.
+
+## Modo simulação × dados reais
+
+Por padrão todas as fontes estão em `simulated`: os números são de demonstração e aparecem com a etiqueta **simulado**. Para dados reais, ajuste o `.env`:
+
+| O que | Configuração | Observação |
+|---|---|---|
+| Cotação do BTC | `MARKET_SOURCE=coinbase` | API pública de cotação da Coinbase, somente leitura |
+| Rede Bitcoin | `NETWORK_SOURCE=mempool` | dificuldade, altura, taxas (mempool.space) |
+| ASIC de Bitcoin | `MINER_TYPE=cgminer`, `MINER_URL=tcp://IP:4028` | API cgminer/bmminer, somente leitura |
+| XMRig (CPU/GPU) | `MINER_TYPE=xmrig`, `MINER_URL=http://127.0.0.1:8080`, `MINER_ACCESS_TOKEN` | permite pausar/retomar após aprovação |
+| Pool | `POOL_SOURCE=json`, `POOL_STATS_URL` e caminhos dos campos | funciona com qualquer pool que tenha endpoint JSON |
+| Recebimentos | `WALLET_SOURCE=mempool`, `WALLET_BTC_ADDRESS`, `ALLOWED_WALLETS` | ex.: endereço de depósito BTC da sua conta Coinbase |
+| Energia | `POWER_WATTS`, `ENERGY_PRICE_KWH` | necessário para resultado líquido estimado |
+
+### Sobre a Coinbase
+
+A Coinbase é corretora e carteira, **não é uma pool de mineração**. O caminho usual é: o minerador trabalha para uma pool, e a pool paga em BTC para um endereço de depósito da sua conta Coinbase. Este sistema lê esse endereço em modo público (sem chaves e sem acesso à conta) e contabiliza só o que foi recebido com confirmação. Minerar Bitcoin com CPU ou GPU comuns não é viável; isso exige ASICs.
+
+## O que tem dentro
+
+- **50 agentes** com contrato padronizado, estados, permissões impostas pelo runtime, registros de execução e verificação de saúde. Catálogo completo: [`docs/AGENTES.md`](docs/AGENTES.md).
+- **Runtime**: registro central, fila com deduplicação, concorrência limitada, tempo limite, novas tentativas com recuo exponencial, espera progressiva após falhas e logs estruturados em JSON (com segredos mascarados).
+- **Guardião de Risco** (agente 26): regras R01–R08 e S01–S04, pausa global, bloqueio de operações financeiras e reavaliação no momento da execução.
+- **Procedência obrigatória** em toda métrica: `real`, `estimado`, `simulado` ou `teste`.
+- **Auditoria** com trilha encadeada por SHA-256.
+- **LLM opcional** (Claude API) por um único gateway, com limites e validação da saída. Desligado por padrão: o plano **Claude Pro não inclui chave de API**; ela é contratada à parte no Console da Anthropic e cobrada por uso.
+- **Escritório 3D** sem dependências: 10 salas, 50 agentes com anel de estado, filtros por estado e setor, ficha individual, console de eventos (copiar/baixar JSON), alertas, ações para aprovar, métricas, relatórios e controles do Guardião.
+
+Arquitetura, mapa de dependências, modos de execução, recursos e modelo de dados: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
+
+## Limitações conhecidas
+
+- **Nenhum adaptador foi validado com equipamento real.** XMRig, cgminer, Coinbase, mempool.space e a pool JSON foram testados com respostas simuladas; os agentes que dependem deles estão marcados como `simulado` até serem validados com seu hardware e suas contas.
+- O agente 48 (Telegram) está como `stub`: implementado, mas não testado com um bot real.
+- A API de resumo do XMRig e a do cgminer não informam temperatura de forma padronizada; nesses casos o Monitor Térmico fica ocioso e a regra de temperatura não atua.
+- Troca de pool, reinício e ajuste de threads são propostos, mas precisam ser feitos manualmente no equipamento; só pausar/retomar o XMRig é executado pelo sistema.
+- Rentabilidade só é estimada para SHA-256 (Bitcoin), antes das taxas da pool.
+- O CSV de recebimentos é apoio, não substitui um contador.
+- O escritório 3D usa renderização isométrica em Canvas (estilo voxel), não WebGL.

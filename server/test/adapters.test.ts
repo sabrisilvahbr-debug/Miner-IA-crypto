@@ -114,3 +114,23 @@ test('logs mascaram segredos', () => {
   assert.equal(r.nested.ok, 1);
   assert.equal(r.authorization, '***');
 });
+
+test('.env: comentários no fim da linha e aspas', async () => {
+  const { parseDotEnv, loadConfig } = await import('../src/config.ts');
+  const env = parseDotEnv('# comentário\nHOST=127.0.0.1            # local\nMARKET_SOURCE=coinbase # cotação\nAPI_TOKEN="abc # não é comentário"\nPOWER_WATTS=3250\n');
+  assert.equal(env.HOST, '127.0.0.1');
+  assert.equal(env.API_TOKEN, 'abc # não é comentário');
+  const c = loadConfig(env, false);
+  assert.equal(c.marketSource, 'coinbase');
+  assert.equal(c.powerWatts, 3250);
+});
+
+test('.env.example é válido e começa em modo simulação', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { parseDotEnv, loadConfig } = await import('../src/config.ts');
+  const c = loadConfig(parseDotEnv(readFileSync('.env.example', 'utf8')), false);
+  assert.equal(c.host, '127.0.0.1');
+  assert.equal(c.minerType, 'simulated');
+  assert.equal(c.llmEnabled, false);
+  assert.equal(c.maxTempC, 80);
+});

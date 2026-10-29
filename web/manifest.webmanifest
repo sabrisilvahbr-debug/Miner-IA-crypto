@@ -1,0 +1,9 @@
+{
+  "name": "AI Crypto Miner — Virtual Mining Office 50",
+  "short_name": "Office 50",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#120e0b",
+  "theme_color": "#120e0b",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
