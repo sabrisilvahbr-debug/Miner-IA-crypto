@@ -27,7 +27,9 @@ npm start
 
 Abra `http://127.0.0.1:8050`.
 
-**Link direto (computador e celular):** https://minercriptoia.vercel.app. Para o celular, no mesmo Wi-Fi: dê duplo clique em **`Abrir-no-Celular.bat`**. O painel abre no computador mostrando um **QR code**; aponte a câmera do celular e toque no link. O celular abre o painel já autorizado e, daí em diante, o link abre o painel direto. O token vai depois do `#` e nunca é enviado a nenhum servidor (nem à Vercel). Para voltar a atender só o computador: `npm run celular -- --desfazer`. A página da Vercel não tem dados: o painel continua rodando só no seu computador.
+**Painel online, só no celular, sem computador:** https://minercriptoia.vercel.app. Ele mostra dados públicos reais (Bitcoin em reais pela Coinbase, rede Bitcoin pela mempool.space, Pearl e Quantus pela WhatToMine), o lucro **estimado** da RTX 3050 (hashrate, consumo e tarifa ajustáveis) e o saldo da sua carteira na pool Kryptex pela API pública dela (`/api/carteira`). Não minera: GPU ao vivo, agentes e teste de mineração continuam no computador. As consultas são feitas pelas funções da Vercel em `api/` (só leitura, só fontes fixas).
+
+**Painel do computador no celular (mesmo Wi-Fi):** dê duplo clique em **`Abrir-no-Celular.bat`**. O painel abre no computador com um **QR code**; aponte a câmera do celular e toque no link. O token vai depois do `#` e nunca é enviado a nenhum servidor. Depois disso, o painel online mostra o botão **Abrir o painel do computador**. Para voltar a atender só o computador: `npm run celular -- --desfazer`.
 
 Testes: `npm test`. Carregamento de todos os módulos (sem dependências): `npm run check:modules`. Build e verificação de tipos: `npm install && npm run build`. Auditoria dos agentes: `npm run audit:agents` ([`docs/AUDITORIA-AGENTES.md`](docs/AUDITORIA-AGENTES.md)). Monitoramento da GPU no Windows: [`docs/GPU-WINDOWS.md`](docs/GPU-WINDOWS.md). Teste controlado com o SRBMiner-MULTI (mineração desativada até você digitar a autorização): [`docs/MINERADOR-SRBMINER.md`](docs/MINERADOR-SRBMINER.md).
 
