@@ -44,7 +44,7 @@ Não foram encontrados `Math.random`, gráficos com dados fixos nem transações
 
 ## 4. Continua indisponível
 
-- Mineração com a RTX 3050: nenhum minerador verificado. A compatibilidade da Pearl com a RTX 3050 de 6 GB não está confirmada em nenhuma fonte.
+- Mineração com a RTX 3050: o SRBMiner-MULTI está integrado só para o **teste controlado** (veja a seção 9), mas nenhum teste real foi feito. A RTX 3050 de 6 GB não aparece em nenhum benchmark público.
 - Hashrate, shares, worker, saldo e pagamentos: dependem de minerador e pool conectados.
 - NiceHash: sem documentação oficial de taxas, mínimo de pagamento e GPUs suportadas.
 - Modalidade B de energia: só existe depois de uma sessão de mineração medida.
@@ -62,8 +62,8 @@ Não foram encontrados `Math.random`, gráficos com dados fixos nem transações
 
 ## 6. Testes e build
 
-- `npm test`: **159 de 159** passando.
-- `npm run check:modules`: **42/42** módulos do servidor carregam sem erro.
+- `npm test`: **173 de 173** passando.
+- `npm run check:modules`: **44/44** módulos do servidor carregam sem erro.
 - `node --check` nos 4 scripts do painel: OK.
 - `npm run build` / `npm run typecheck`: **não executados aqui**, porque o `npm install` falha com `ENOTFOUND registry.npmjs.org`. Precisa ser rodado no seu computador.
 
@@ -80,3 +80,11 @@ Não foram encontrados `Math.random`, gráficos com dados fixos nem transações
 3. Informar caminho e hash ao sistema (integração do minerador: próxima etapa, depende da sua aprovação).
 4. Informar `PAYOUT_ADDRESS_PRL` (endereço público) e incluir a pool em `ALLOWED_POOLS`.
 5. No painel: **Verificar pré-condições** → **INICIAR TESTE** (5 min) com autorização explícita → **INTERROMPER** se necessário.
+
+## 9. Integração do SRBMiner-MULTI (2026-11-01, autorizada pelo operador)
+
+- **O que foi feito:** o minerador é executado só no **teste controlado**, com SHA-256 conferido a cada início, argumentos documentados (arquivo Parameters oficial + comando publicado pela Kryptex), frase de autorização **digitada** no painel, limites de temperatura e tempo, parada ao fechar o painel, log completo e relatório "comprovado / não comprovado". Guia: `docs/MINERADOR-SRBMINER.md`.
+- **Pool do teste:** Kryptex, servidor da América do Sul (`prl-br.kryptex.network:7048`), porque é a única que publica o login (`CARTEIRA.WORKER`) para o SRBMiner-MULTI. A 2Miners segue no cálculo de rentabilidade.
+- **Leitura:** pelo console ("result accepted", "result rejected", "new job", "Total:"). A API do minerador **não** é usada: o formato não é documentado e ela aceita leitura por qualquer site.
+- **Verificado aqui:** 14 testes novos com um minerador **falso** (script que só imprime linhas), incluindo o fluxo completo pela API e capturas de tela do painel. **Nenhum minerador real foi executado.**
+- **Não verificado:** o SRBMiner-MULTI real no Windows, o formato real do console, a compatibilidade da RTX 3050 de 6 GB, shares aceitas pela pool, saldo e pagamento.

@@ -21,7 +21,7 @@ export interface GpuEvent {
 
 export interface GpuView {
   /** A mineração nunca é iniciada por este módulo. */
-  mineracao: 'DESATIVADA';
+  mineracao: string; // estado da mineração no momento (o monitor em si nunca minera)
   /** "HARDWARE NÃO VERIFICADO" até a primeira leitura bem-sucedida do nvidia-smi neste processo. */
   hardware: 'VERIFICADO' | 'HARDWARE NÃO VERIFICADO';
   status: GpuStatus;

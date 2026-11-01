@@ -239,3 +239,4 @@ dialog menu { padding: 0; margin: 14px 0 0; display: flex; justify-content: flex
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+.console { background: #0d0c0a; border: 1px solid #3a332a; border-radius: 6px; padding: 8px; font: 11px/1.45 var(--mono); color: #d8cfbf; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 6px 0; }

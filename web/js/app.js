@@ -59,7 +59,7 @@ const tag = (p) => `<span class="tag ${esc(p)}">${esc(p)}</span>`;
 // Rótulos de estado exibidos ao operador (nunca escondem erro nem ausência de dado).
 const STATE_TAG = {
   REAL: ['real', 'REAL'], ESTIMADO: ['estimado', 'ESTIMADO'], 'DADOS DESATUALIZADOS': ['desatualizado', 'DESATUALIZADO'],
-  INDISPONÍVEL: ['indisponivel', 'INDISPONÍVEL'], ERRO: ['erro', 'ERRO'], 'NÃO IMPLEMENTADO': ['naoimpl', 'NÃO IMPLEMENTADO'],
+  INDISPONÍVEL: ['indisponivel', 'INDISPONÍVEL'], ERRO: ['erro', 'ERRO'], 'NÃO IMPLEMENTADO': ['naoimpl', 'NÃO IMPLEMENTADO'], 'NÃO CONFIGURADO': ['naoimpl', 'NÃO CONFIGURADO'], INATIVO: ['indisponivel', 'INATIVO'],
   'HASHRATE NÃO MEDIDO': ['indisponivel', 'HASHRATE NÃO MEDIDO'], 'POOL NÃO CONECTADA': ['indisponivel', 'POOL NÃO CONECTADA'],
   'NENHUMA SHARE ACEITA CONFIRMADA': ['indisponivel', 'NENHUMA SHARE ACEITA CONFIRMADA'], INATIVO: ['indisponivel', 'INATIVO'],
   'HARDWARE NÃO VERIFICADO': ['indisponivel', 'HARDWARE NÃO VERIFICADO'],
@@ -485,11 +485,17 @@ async function panelMining() {
       <div class="banner">${esc(auto.rentabilidade)}</div>${coins}
       <p class="meta">Fonte: ${esc(auto.fonteMercado)}${auto.fonteStatus?.consultadoEm ? ` · consultada ${fmtWhen(auto.fonteStatus.consultadoEm)}` : ''}${auto.fonteStatus?.cotacaoBtc ? ` · cotação BTC: ${esc(auto.fonteStatus.cotacaoBtc.fonte)}, ${fmtWhen(auto.fonteStatus.cotacaoBtc.atualizadoEm)}` : ''}. O painel nunca garante lucro.</p>
     </div>
+    <div class="section"><h4>Minerador ${stTag(mining.minerador?.configurado ? 'REAL' : 'NÃO CONFIGURADO')}</h4>
+      <p class="meta">${esc(mining.minerador?.nome ?? 'SRBMiner-MULTI')} · worker ${esc(mining.minerador?.worker ?? '—')} · ${mining.minerador?.configurado ? 'caminho e SHA-256 informados no .env (o hash é conferido de novo a cada teste)' : 'informe MINER_GPU_PATH e MINER_GPU_SHA256 no .env (docs/MINERADOR-SRBMINER.md)'}</p>
+      ${(mining.minerador?.problemas ?? []).map((x) => `<p class="note">${esc(x)}</p>`).join('')}
+    </div>
     <div class="section"><h4>Teste controlado</h4>
       <div class="form-row"><label>Moeda <select id="tCoin">${auto.moedas.map((c) => `<option>${esc(c.symbol)}</option>`).join('') || '<option>PRL</option>'}</select></label>
         <label>Duração (min) <input id="tDur" type="number" min="1" max="30" value="5" style="width:64px"></label></div>
+      <div class="form-row"><label style="flex:1">Autorização (digite a frase exata) <input id="tAuth" type="text" autocomplete="off" spellcheck="false" placeholder="AUTORIZO TESTE DE MINERAÇÃO" style="width:100%"></label></div>
       <div class="btn-row"><button class="btn" data-mining="check">Verificar pré-condições</button><button class="btn primary" data-mining="start">INICIAR TESTE</button><button class="btn danger" data-mining="stop">INTERROMPER</button></div>
       <div id="tResult" class="checks list"></div>
+      <div id="tLive">${liveHtml(mining)}</div>
     </div>
     <div class="section"><h4>Transições de estado</h4><div class="list">${mining.historico.slice().reverse().map((t) => `<div class="row"><b>${esc(t.from)} → ${esc(t.to)}</b> · ${fmtTime(t.at)} · ${esc(t.origem)}: ${esc(t.motivo)}</div>`).join('') || '<p class="empty">Sem transições.</p>'}</div></div>`);
 }
@@ -507,12 +513,52 @@ async function miningCommand(kind) {
   if (kind === 'check') { const r = await api('/api/mining/test/check', { method: 'POST', body, allowError: true }); renderChecks(r); toast(r.pronto ? 'Pré-condições atendidas' : 'Há pré-condições pendentes'); return; }
   const pre = await api('/api/mining/test/check', { method: 'POST', body, allowError: true });
   if (!pre.pronto) { renderChecks(pre); toast('Teste não iniciado: há pré-condições pendentes'); return; }
-  const lim = pre.plano?.limites ?? {};
-  const msg = `Autorizar um teste de ${body.durationMin} min com ${body.coin}?\nLimites: ${lim.temperaturaMaxC} °C (crítico ${lim.temperaturaCriticaC} °C), potência da GPU ${lim.potenciaLimiteGpuW ?? '?'} W.\nRiscos: ${(pre.plano?.riscos ?? []).join('; ')}.`;
-  if (!confirm(msg)) return;
-  const r = await api('/api/mining/test/start', { method: 'POST', body: { ...body, confirmacao: 'AUTORIZO TESTE DE MINERAÇÃO' }, allowError: true });
+  // A frase é DIGITADA pelo operador; o painel nunca a preenche sozinho. O servidor confere o texto exato.
+  const frase = ($('#tAuth')?.value ?? '').trim();
+  if (!frase) { renderChecks({ ...pre, error: `Digite a frase de autorização no campo acima. ${pre.plano?.autorizacao ?? ''}` }); return; }
+  const r = await api('/api/mining/test/start', { method: 'POST', body: { ...body, confirmacao: frase }, allowError: true });
+  if ($('#tAuth')) $('#tAuth').value = '';
   renderChecks(r);
   toast(r.error ?? `Estado: ${r.estado}`);
+  await updateMiningLive();
+}
+
+function fmtHs(v) {
+  if (typeof v !== 'number') return '—';
+  for (const [f, n] of [[1e15, 'PH/s'], [1e12, 'TH/s'], [1e9, 'GH/s'], [1e6, 'MH/s'], [1e3, 'kH/s']]) if (v >= f) return `${(v / f).toFixed(2)} ${n}`;
+  return `${v.toFixed(0)} H/s`;
+}
+
+/** Teste em andamento (console ao vivo) ou relatório do último teste. Nada aqui é estimado. */
+function liveHtml(mining) {
+  const t = mining.testeAtual;
+  if (t) {
+    return `<div class="banner">TESTE EM ANDAMENTO · ${esc(mining.estado)} · ${esc(t.moeda)} · ${esc(t.pool)} · desde ${fmtWhen(t.iniciadoEm)}</div>
+      <pre class="console">${esc((t.console.ultimas ?? []).join('\n')) || 'aguardando a saída do minerador…'}</pre>
+      <p class="meta">Console gravado em ${esc(t.console.arquivo)}. Use INTERROMPER para parar a qualquer momento.</p>`;
+  }
+  const r = mining.ultimoTeste;
+  if (!r) return '<p class="empty">Nenhum teste realizado.</p>';
+  const li = (xs) => xs.map((x) => `<li>${esc(x)}</li>`).join('');
+  return `<h4 style="margin-top:12px">Último teste ${stTag('REAL')}</h4>
+    <p class="meta">${esc(r.moeda)} · ${esc(r.minerador)} · ${esc(r.pool)} · worker ${esc(r.worker)} · ${fmtWhen(r.iniciadoEm)} → ${fmtWhen(r.encerradoEm)} (${r.duracaoS ?? '?'} s) · fim: ${esc(r.motivoFim ?? '—')}</p>
+    <div class="ind"><span class="lbl">Hashrate informado pelo minerador</span><span class="val">médio ${fmtHs(r.hashrate.medioHs)} · máx. ${fmtHs(r.hashrate.maximoHs)}</span><span class="src">${r.hashrate.amostras} leituras · trecho original: ${esc(r.hashrate.trechoOriginal ?? '—')}</span></div>
+    <div class="ind"><span class="lbl">Shares (console)</span><span class="val">${r.shares.aceitas} aceitas · ${r.shares.rejeitadas} rejeitadas</span><span class="src">${esc(r.shares.fonte)}</span></div>
+    <div class="ind"><span class="lbl">GPU durante o teste</span><span class="val">máx. ${r.gpu.temperaturaMaxC ?? '—'} °C · média ${r.gpu.potenciaMediaW != null ? r.gpu.potenciaMediaW.toFixed(1) : '—'} W</span><span class="src">${r.gpu.amostrasPotencia} amostras de consumo (nvidia-smi)</span></div>
+    <p class="meta"><b>Comprovado:</b></p><ul>${li(r.comprovado) || '<li>nada</li>'}</ul>
+    <p class="meta"><b>Não comprovado:</b></p><ul>${li(r.naoComprovado)}</ul>
+    <p class="meta">Log completo: ${esc(r.console.arquivo)}</p>
+    <pre class="console">${esc((r.console.ultimas ?? []).slice(-12).join('\n'))}</pre>`;
+}
+
+async function updateMiningLive() {
+  const box = $('#tLive');
+  if (!box) return;
+  const m = await api('/api/mining/state', { allowError: true });
+  if (!m || m.error) return;
+  box.innerHTML = liveHtml(m);
+  const ban = document.querySelector('.panel .banner');
+  if (ban && ban.textContent.startsWith('MINERAÇÃO')) { ban.textContent = `MINERAÇÃO: ${m.estado}`; ban.classList.toggle('off', m.estado === 'DESATIVADA'); }
 }
 
 function panelMore() {
@@ -775,6 +821,8 @@ async function main() {
   connect();
   setInterval(refreshSummary, 10_000);
   setInterval(() => { if (st.panel && ['agent', 'metrics', 'alerts', 'actions'].includes(st.panel.kind) && !document.hidden) renderPanel(); }, 15_000);
+  // Durante um teste, só a área do console é atualizada (o campo da frase não é apagado).
+  setInterval(() => { if (st.panel?.kind === 'mining' && !document.hidden) void updateMiningLive(); }, 5_000);
 }
 
 main();

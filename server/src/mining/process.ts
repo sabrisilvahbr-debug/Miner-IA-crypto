@@ -1,12 +1,12 @@
-// Supervisor de processos de mineração. Nenhum minerador está configurado hoje: este módulo é a base segura
-// para uma etapa futura. Regras:
+// Supervisor de processos de mineração. Só é criado quando MINER_GPU_PATH e MINER_GPU_SHA256 estão no .env.
+// Regras:
 //  - só executa um binário com caminho absoluto e SHA-256 conferido (lista explícita, nunca vinda da interface);
 //  - argumentos montados pelo backend, nunca recebidos do navegador; sem shell;
 //  - tempo máximo obrigatório; encerramento com SIGTERM e, se preciso, SIGKILL; confirma que o processo saiu.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 
 export interface AllowedBinary {
   id: string;
@@ -18,6 +18,8 @@ export interface RunSpec {
   binaryId: string;
   args: string[]; // montados pelo backend
   maxRuntimeMs: number;
+  onOutput?: (text: string, stream: 'stdout' | 'stderr') => void; // console do processo (somente leitura)
+  cwd?: string; // pasta de trabalho; por padrão, a pasta do próprio binário
 }
 
 export interface ProcessRecord {
@@ -72,7 +74,7 @@ export class ProcessSupervisor {
     const actual = await sha256File(bin.path);
     if (actual !== bin.sha256) throw new Error(`integridade recusada: SHA-256 de ${bin.id} não confere`);
 
-    const child = spawn(bin.path, spec.args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin.path, spec.args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], cwd: spec.cwd ?? dirname(bin.path) });
     this.child = child;
     this.record = { binaryId: bin.id, pid: child.pid, startedAt: this.now() };
     this.exited = new Promise<void>((resolve) => {
@@ -86,10 +88,23 @@ export class ProcessSupervisor {
         resolve();
       });
     });
-    child.stdout?.resume();
-    child.stderr?.resume();
+    if (spec.onOutput) {
+      const cb = spec.onOutput;
+      child.stdout?.setEncoding('utf8').on('data', (t: string) => { try { cb(t, 'stdout'); } catch { /* leitor nunca derruba o processo */ } });
+      child.stderr?.setEncoding('utf8').on('data', (t: string) => { try { cb(t, 'stderr'); } catch { /* idem */ } });
+    } else {
+      child.stdout?.resume();
+      child.stderr?.resume();
+    }
     this.timer = setTimeout(() => void this.stop('tempo máximo de segurança atingido'), spec.maxRuntimeMs);
     return { ...this.record };
+  }
+
+  /** Último recurso, síncrono (evento "exit" do Node): no Windows, o filho não morre junto com o pai. */
+  killNow(): void {
+    if (this.isRunning()) {
+      try { this.child!.kill('SIGKILL'); } catch { /* já saiu */ }
+    }
   }
 
   /** Encerra e CONFIRMA que o processo saiu. Retorna o registro final. */

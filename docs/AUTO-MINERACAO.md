@@ -57,7 +57,7 @@ Os testes cobrem: cálculo de energia e lucro líquido, pagamento mínimo, fresc
 ## Limitações conhecidas
 
 - A WhatToMine não é alcançável a partir do ambiente de desenvolvimento; o adaptador foi testado com respostas no formato real, mas a consulta ao vivo só acontece no seu computador.
-- O hashrate da RTX 3050 em Pearl ainda não foi medido: sem ele, o lucro fica indisponível.
-- Login/worker e software de mineração para a PRL ainda não estão verificados. A QTC está em investigação.
-- O painel visual ainda não mostra a seleção automática; a informação está disponível pela API.
-- Não há teste de integração com minerador real, porque nenhuma ativação real foi autorizada.
+- O hashrate da RTX 3050 em Pearl ainda não foi medido: sem ele, o lucro fica indisponível. O teste controlado (`docs/MINERADOR-SRBMINER.md`) é o que vai medir.
+- Para a PRL, o login e o minerador estão documentados pela Kryptex (pool do teste). Na 2Miners, o login continua sem documentação. A QTC tem pool e algoritmo conferidos, mas nenhum minerador integrado.
+- A seleção automática só recomenda: nenhuma troca de moeda é executada.
+- O SRBMiner-MULTI foi testado só com um minerador falso; o primeiro teste real ainda não aconteceu.

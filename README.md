@@ -27,7 +27,7 @@ npm start
 
 Abra `http://127.0.0.1:8050`.
 
-Testes: `npm test`. Carregamento de todos os módulos (sem dependências): `npm run check:modules`. Build e verificação de tipos: `npm install && npm run build`. Auditoria dos agentes: `npm run audit:agents` ([`docs/AUDITORIA-AGENTES.md`](docs/AUDITORIA-AGENTES.md)). Monitoramento da GPU no Windows: [`docs/GPU-WINDOWS.md`](docs/GPU-WINDOWS.md).
+Testes: `npm test`. Carregamento de todos os módulos (sem dependências): `npm run check:modules`. Build e verificação de tipos: `npm install && npm run build`. Auditoria dos agentes: `npm run audit:agents` ([`docs/AUDITORIA-AGENTES.md`](docs/AUDITORIA-AGENTES.md)). Monitoramento da GPU no Windows: [`docs/GPU-WINDOWS.md`](docs/GPU-WINDOWS.md). Teste controlado com o SRBMiner-MULTI (mineração desativada até você digitar a autorização): [`docs/MINERADOR-SRBMINER.md`](docs/MINERADOR-SRBMINER.md).
 
 ## Usar no iPhone
 

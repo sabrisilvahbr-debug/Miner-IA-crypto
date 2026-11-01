@@ -16,6 +16,10 @@ import { DEFAULT_SELECTOR, NOT_CALCULABLE, activeCandidates } from '../mining/se
 import { energyReport } from '../mining/energy.ts';
 import { buildIndicators } from '../mining/state.ts';
 import { AUTH_PHRASE, testChecklist, validateTestRequest } from '../mining/testPlan.ts';
+import { findCoin } from '../mining/catalog.ts';
+import { SRBMINER, buildSrbArgs } from '../mining/srbminer.ts';
+import { sha256File } from '../mining/process.ts';
+import type { TestReport } from '../mining/testRunner.ts';
 import { buildQuote } from '../mining/quotes.ts';
 import type { MarketQuote } from '../mining/profitability.ts';
 import { WhatToMineSource } from '../adapters/whattomine.ts';
@@ -182,7 +186,7 @@ export function createApiServer(app: App, webDir: string) {
   });
 
   // ---------------- GPU (somente leitura pelo nvidia-smi; nenhum minerador é consultado ou iniciado) ----------------
-  route('GET', '/api/gpu', async (_q, res) => json(res, 200, await app.gpu.read()));
+  route('GET', '/api/gpu', async (_q, res) => json(res, 200, { ...(await app.gpu.read()), mineracao: app.mining.state }));
 
   // ---------------- rentabilidade de GPU (recomendação; mineração DESATIVADA) ----------------
   const wtm = config.miningDataSource === 'whattomine' ? new WhatToMineSource(app.http) : undefined;
@@ -196,7 +200,7 @@ export function createApiServer(app: App, webDir: string) {
       hoursPerDay: config.operationHoursPerDay,
       daysPerMonth: config.energyDaysPerMonth,
       gpuPowerLimitW: lim && lim.provenance === 'real' && typeof lim.value === 'number' ? lim.value : undefined,
-    }); // medição durante mineração: inexistente enquanto a mineração estiver DESATIVADA
+    }, store.getKV<TestReport | null>('mining.lastTest', null)?.energiaMedida); // modalidade B: só amostras do último teste em MINERANDO
   };
   route('GET', '/api/energy', (_q, res) => json(res, 200, { moeda: config.localCurrency, ...energyNow() }));
   route('GET', '/api/auto-mining', async (_q, res) => {
@@ -247,38 +251,79 @@ export function createApiServer(app: App, webDir: string) {
   });
 
   // ---------------- estado da mineração e teste controlado ----------------
-  const minerIntegrated = () => false; // nenhum minerador de GPU verificado (ver docs/INTEGRACOES-GPU.md)
+  // O minerador só conta como integrado se o arquivo existe AGORA e o SHA-256 confere com o informado no .env.
+  const minerCheck = async (): Promise<{ ok: boolean; detalhe: string }> => {
+    const mg = config.minerGpu;
+    if (mg.problemas.length) return { ok: false, detalhe: `configuração recusada: ${mg.problemas.join('; ')}` };
+    if (!app.supervisor || !mg.path || !mg.sha256) {
+      if (app.supervisor) return { ok: true, detalhe: 'binário de teste injetado (somente testes automatizados)' };
+      return { ok: false, detalhe: `informe MINER_GPU_PATH (caminho do ${SRBMINER.exeName}) e MINER_GPU_SHA256 no .env; veja docs/MINERADOR-SRBMINER.md` };
+    }
+    try {
+      const h = await sha256File(mg.path);
+      return h === mg.sha256
+        ? { ok: true, detalhe: `${SRBMINER.name}: ${mg.path} · SHA-256 conferido agora (${h.slice(0, 12)}…)` }
+        : { ok: false, detalhe: `SHA-256 NÃO confere: arquivo ${h.slice(0, 12)}…, informado ${mg.sha256.slice(0, 12)}…. Não execute: baixe de novo da página oficial` };
+    } catch (e) {
+      return { ok: false, detalhe: `arquivo não encontrado ou ilegível em MINER_GPU_PATH (${(e as NodeJS.ErrnoException).code ?? 'erro'}). Se o antivírus moveu o arquivo para a quarentena, a decisão de liberar é sua: o sistema não desativa proteções` };
+    }
+  };
   route('GET', '/api/mining/state', (_q, res) => {
     const get = (k: string) => store.latestMetric(k);
     json(res, 200, {
       ...app.mining.snapshot(),
       indicadores: buildIndicators(get, app.supervisor ? app.supervisor.isRunning() : undefined, Date.now()),
       processo: app.supervisor?.last() ?? null,
+      testeAtual: app.runner?.active() ? app.runner.current() : null,
+      ultimoTeste: store.getKV('mining.lastTest', null),
+      minerador: { nome: `${SRBMINER.name} ${SRBMINER.version}`, configurado: !!app.supervisor, worker: config.minerGpu.worker, problemas: config.minerGpu.problemas },
       historico: app.mining.history().slice(-20),
     });
   });
   const checklistFor = async (body: unknown) => {
     const req = validateTestRequest(body);
     if (typeof req === 'string') return { erro: req };
-    const gpu = await app.gpu.read();
-    return { req, ...testChecklist({ req, gpu, allowedPools: config.allowedPools, payoutAddresses: config.payoutAddresses, minerIntegrated: minerIntegrated(), maxTempC: config.maxTempC, criticalTempC: config.criticalTempC }) };
+    const gpu = await app.gpu.read(true);
+    const mc = await minerCheck();
+    return { req, ...testChecklist({ req, gpu, allowedPools: config.allowedPools, payoutAddresses: config.payoutAddresses, minerIntegrated: mc.ok, minerDetail: mc.detalhe, maxTempC: config.maxTempC, criticalTempC: config.criticalTempC, busy: !!app.runner?.active() }) };
+  };
+  const toReady = (motivo: string) => {
+    if (['DESATIVADA', 'PARADA', 'DADOS INDISPONÍVEIS'].includes(app.mining.state)) app.mining.transition('PRONTA PARA TESTE', 'operador', motivo);
   };
   route('POST', '/api/mining/test/check', async (req, res) => {
     const r = await checklistFor(await readBody(req));
     if ('erro' in r) return json(res, 400, { error: r.erro });
-    if (r.pronto && app.mining.state === 'DESATIVADA') app.mining.transition('PRONTA PARA TESTE', 'operador', 'todas as pré-condições conferidas');
+    if (r.pronto) toReady('todas as pré-condições conferidas');
+    else if (app.mining.state === 'PRONTA PARA TESTE') app.mining.transition('DESATIVADA', 'operador', 'pré-condição deixou de ser atendida');
     json(res, 200, { ...r, estado: app.mining.state });
   });
   route('POST', '/api/mining/test/start', async (req, res) => {
     const body = await readBody(req);
+    if (body.confirmacao !== AUTH_PHRASE) return json(res, 400, { error: `autorização explícita ausente: digite a frase exata "${AUTH_PHRASE}"`, estado: app.mining.state });
     const r = await checklistFor(body);
     if ('erro' in r) return json(res, 400, { error: r.erro });
     if (!r.pronto) return json(res, 409, { error: 'pré-condições não atendidas: teste não iniciado', checks: r.checks, estado: app.mining.state });
-    if (body.confirmacao !== AUTH_PHRASE) return json(res, 400, { error: `autorização explícita ausente: envie confirmacao="${AUTH_PHRASE}"` });
-    // Mesmo com tudo conferido, não há minerador integrado nesta versão.
-    json(res, 501, { error: 'NÃO IMPLEMENTADO: execução de minerador de GPU', estado: app.mining.state });
+    if (!app.runner) return json(res, 409, { error: 'minerador não configurado', estado: app.mining.state });
+    const coin = findCoin(r.req.coin)!;
+    let args: string[];
+    try {
+      args = buildSrbArgs({ profile: coin.minerProfile!, wallet: config.payoutAddresses[r.req.coin], worker: config.minerGpu.worker, gpuOffTempC: Math.round(config.maxTempC) });
+    } catch (e) {
+      return json(res, 409, { error: `teste não iniciado: ${(e as Error).message}`, estado: app.mining.state });
+    }
+    toReady('pré-condições conferidas no início do teste');
+    try {
+      const teste = await app.runner.start({ coin: r.req.coin, durationMin: r.req.durationMin, args, profile: coin.minerProfile!, worker: config.minerGpu.worker });
+      json(res, 200, { ok: true, estado: app.mining.state, teste, checks: r.checks });
+    } catch (e) {
+      json(res, 500, { error: `teste não iniciado: ${(e as Error).message}`, estado: app.mining.state, ultimoTeste: store.getKV('mining.lastTest', null) });
+    }
   });
   route('POST', '/api/mining/stop', async (_q, res) => {
+    if (app.runner?.active()) {
+      const rep = await app.runner.stop('INTERROMPER pelo operador');
+      return json(res, 200, { ok: true, mensagem: 'teste interrompido; processo encerrado e confirmado', estado: app.mining.state, teste: rep, processo: app.supervisor?.last() ?? null });
+    }
     if (!app.supervisor || !app.supervisor.isRunning()) return json(res, 200, { ok: true, mensagem: 'nenhum processo de mineração ativo', estado: app.mining.state });
     const rec = await app.supervisor.stop('interrompido pelo operador');
     if (['INICIANDO', 'MINERANDO', 'ERRO', 'TESTE AUTORIZADO'].includes(app.mining.state)) app.mining.transition('PARADA', 'operador', 'botão INTERROMPER');

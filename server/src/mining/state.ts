@@ -131,11 +131,13 @@ export function buildIndicators(get: (key: string) => MetricLike | undefined, pr
   const shares = get('miner.shares_accepted');
   return {
     processoAtivo: processAlive === undefined
-      ? { estado: 'NÃO IMPLEMENTADO', observacao: 'nenhum minerador de GPU verificado está integrado' }
+      ? { estado: 'NÃO CONFIGURADO', observacao: 'informe MINER_GPU_PATH e MINER_GPU_SHA256 no .env (docs/MINERADOR-SRBMINER.md)' }
       : { estado: processAlive ? 'REAL' : 'INATIVO', valor: processAlive, fonte: 'supervisor de processos' },
     gpuEmUso: fromMetric(get('gpu.utilization_pct'), now, 'INDISPONÍVEL', 'uso da GPU não comprova mineração'),
     hashrateLocal: fromMetric(get('miner.hashrate_hs'), now, 'HASHRATE NÃO MEDIDO'),
     workerConectado: (() => {
+      const mc = get('miner.pool_connected');
+      if (mc && mc.provenance === 'real' && mc.value === true && now - mc.ts <= FRESH_MS) return fromMetric(mc, now, 'POOL NÃO CONECTADA', 'a pool enviou trabalho ao minerador (console)');
       const m = get('pool.connected');
       if (!m || m.provenance !== 'real' || m.value !== true) return { estado: 'POOL NÃO CONECTADA', observacao: m ? String(get('pool.fallback_reason')?.value ?? '') || undefined : undefined };
       return fromMetric(m, now, 'POOL NÃO CONECTADA');

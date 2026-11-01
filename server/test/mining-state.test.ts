@@ -53,7 +53,7 @@ const metricsFrom = (m: Record<string, MetricLike>) => (k: string) => m[k];
 
 test('indicadores: sem dados, cada um mostra o próprio rótulo e nenhum valor', () => {
   const i = buildIndicators(metricsFrom({}), undefined, NOW);
-  assert.equal(i.processoAtivo.estado, 'NÃO IMPLEMENTADO');
+  assert.equal(i.processoAtivo.estado, 'NÃO CONFIGURADO');
   assert.equal(i.hashrateLocal.estado, 'HASHRATE NÃO MEDIDO');
   assert.equal(i.workerConectado.estado, 'POOL NÃO CONECTADA');
   assert.equal(i.sharesAceitas.estado, 'NENHUMA SHARE ACEITA CONFIRMADA');
@@ -137,14 +137,28 @@ test('teste: validação de entrada da requisição', () => {
   assert.match(String(validateTestRequest({ coin: 'PRL', durationMin: 2.5 })), /duração/);
 });
 
-test('teste: hoje nunca fica pronto — falta minerador, compatibilidade e login documentados', () => {
-  const r = testChecklist({ req: { coin: 'PRL', durationMin: 5 }, gpu: okGpu, allowedPools: ['stratum+tcp://prl.2miners.com:1818'], payoutAddresses: { PRL: 'prl1qexemploenderecopublico' }, minerIntegrated: false, maxTempC: 80, criticalTempC: 90 });
+const KRYPTEX = 'stratum+tcp://prl-br.kryptex.network:7048';
+const ADDR = 'prl1qexemploenderecopublico0000';
+
+test('teste: sem minerador verificado não fica pronto; pool sem comando publicado (2Miners) não é aceita', () => {
+  const r = testChecklist({ req: { coin: 'PRL', durationMin: 5 }, gpu: okGpu, allowedPools: ['stratum+tcp://prl.2miners.com:1818'], payoutAddresses: { PRL: ADDR }, minerIntegrated: false, maxTempC: 80, criticalTempC: 90 });
   assert.equal(r.pronto, false);
   const failed = r.checks.filter((c) => !c.ok).map((c) => c.item);
   assert.ok(failed.includes('Minerador verificado (origem, integridade e integração)'));
-  assert.ok(failed.includes('Compatibilidade do algoritmo com a GPU comprovada'));
+  assert.ok(failed.includes('Pool autorizada no Guardião (ALLOWED_POOLS)'), 'o teste usa a pool que publica o comando (Kryptex)');
   assert.ok(r.checks.find((c) => c.item === 'GPU verificada')!.ok);
   assert.equal((r.plano.limites as { potenciaLimiteGpuW: number }).potenciaLimiteGpuW, 70);
+});
+
+test('teste: com minerador conferido, pool Kryptex autorizada e endereço público, fica pronto', () => {
+  const r = testChecklist({ req: { coin: 'PRL', durationMin: 5 }, gpu: okGpu, allowedPools: [KRYPTEX], payoutAddresses: { PRL: ADDR }, minerIntegrated: true, maxTempC: 80, criticalTempC: 90 });
+  assert.deepEqual(r.checks.filter((c) => !c.ok).map((c) => c.item), []);
+  assert.equal(r.pronto, true);
+  assert.match(r.checks.find((c) => c.item.startsWith('Formato de login'))!.detalhe, /CARTEIRA\.WORKER/);
+  const busy = testChecklist({ req: { coin: 'PRL', durationMin: 5 }, gpu: okGpu, allowedPools: [KRYPTEX], payoutAddresses: { PRL: ADDR }, minerIntegrated: true, maxTempC: 80, criticalTempC: 90, busy: true });
+  assert.equal(busy.pronto, false);
+  const hot = testChecklist({ req: { coin: 'PRL', durationMin: 5 }, gpu: okGpu, allowedPools: [KRYPTEX], payoutAddresses: { PRL: ADDR }, minerIntegrated: true, maxTempC: 40, criticalTempC: 90 });
+  assert.equal(hot.pronto, false, 'GPU acima da temperatura máxima não inicia');
 });
 
 test('teste: moeda em investigação e GPU ausente aparecem como falhas', () => {
@@ -207,7 +221,7 @@ test('API: estado inicial DESATIVADA e indicadores sem valores inventados', asyn
     const s = await (await fetch(`${b}/api/mining/state`)).json();
     assert.equal(s.estado, 'DESATIVADA');
     assert.equal(s.indicadores.hashrateLocal.estado, 'HASHRATE NÃO MEDIDO');
-    assert.equal(s.indicadores.processoAtivo.estado, 'NÃO IMPLEMENTADO');
+    assert.equal(s.indicadores.processoAtivo.estado, 'NÃO CONFIGURADO');
   });
 });
 

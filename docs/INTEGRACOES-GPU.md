@@ -9,11 +9,11 @@ Verificado em 2026-10-29. "Não informado" significa que a fonte consultada não
 | Opção | Paga em | Algoritmo | Compatível com a RTX 3050 6 GB? | Integração implementada |
 |---|---|---|---|---|
 | **NiceHash** | BTC (segundo o site) | o NiceHash escolhe | não informado nas páginas consultadas | **Não.** Faltam documentação oficial de API, taxas e mínimo de pagamento |
-| **Pearl (PRL)** | PRL | PearlHash | **provável**: benchmark público da RTX 3050 **8GB**; a de 6 GB não aparece | Pool, algoritmo, taxa e pagamento mínimo, sim. Minerador, não |
+| **Pearl (PRL)** | PRL | PearlHash | **provável**: benchmark público da RTX 3050 **8GB**; a de 6 GB não aparece | Pool, algoritmo, taxa e pagamento mínimo, sim. **SRBMiner-MULTI integrado para teste controlado** (pool Kryptex), ainda não executado de verdade |
 | **Quantus (QTC)** | QTC | Poseidon2 (= QPoW) | **provável**: "RTX 3000-series and newer"; sem benchmark da RTX 3050 | Pool, algoritmo, taxa e pagamento mínimo, sim. Minerador, não |
 | **Luxor** | BTC, LTC/DOGE, SC, ZEC | SHA-256 e outros de ASIC | **não**: o guia oficial fala só em ASIC | Só leitura da conta (API), já existente. Não serve para a GPU |
 
-Nenhuma das três opções está pronta para um teste real. Por isso, o botão **INICIAR TESTE** mostra a lista do que falta e não executa nada.
+Só a Pearl tem caminho para um teste real: SRBMiner-MULTI + Kryptex, com o comando publicado pela pool. O teste depende de você baixar o minerador, informar caminho, SHA-256 e endereço, e digitar a frase de autorização. Veja `docs/MINERADOR-SRBMINER.md`.
 
 ## NiceHash
 
@@ -36,7 +36,8 @@ Nenhuma das três opções está pronta para um teste real. Por isso, o botão *
 - **Estimativa de 2026-10-29** (fórmula do sistema; WhatToMine das 18:36 UTC: nethash 75.660.874.387.190.869.565, recompensa 2.211,65 PRL, bloco 184 s, 0,0000223 BTC/PRL; Coinbase: R$ 424.959/BTC; R$ 0,90/kWh; taxa da pool 1% e do minerador 2,5% presumida): com 31,34 Th/s e 56 W, **≈ 0,43 PRL/dia, receita ≈ R$ 4,08/dia, energia ≈ R$ 1,21/dia, líquido ≈ R$ 2,73/dia (≈ R$ 82/mês)**. Para a 6 GB, supondo 20% menos (suposição, não medição): ≈ R$ 2,06/dia. **Premissa não verificada:** que o `nethash` da WhatToMine esteja em H/s, na mesma unidade do benchmark. O valor muda todo dia com a dificuldade e o preço. Não é lucro comprovado.
 - **Rentabilidade no sistema:** a WhatToMine lista a Pearl (tag `PRL`, algoritmo `Pearl`), usada pelo sistema com hashrate medido.
 - **Conversão em BTC:** a WhatToMine informa a cotação da PRL em BTC. Corretora, liquidez e taxas de conversão **não foram verificadas**.
-- **Para avançar:** (1) confirmar em fonte oficial do minerador que a RTX 3050 de 6 GB roda PearlHash; (2) escolher um minerador com download e hash verificáveis; (3) você baixar, conferir o hash e informar o caminho e o SHA-256 ao sistema; (4) informar `PAYOUT_ADDRESS_PRL` (endereço público). Só então o teste curto pode ser autorizado.
+- **Kryptex (pool do teste):** comando publicado: `SRBMiner-MULTI.exe --disable-cpu --algorithm pearlhash --pool prl.kryptex.network:7048 --wallet WALLET_ADDRESS.WORKER`. Servidores: global, `prl-eu`, `prl-us`, **`prl-br` (América do Sul)**, `prl-sg`, `prl-hk`, `prl-ru`, `prl-ae`, todos na porta 7048. Para a carteira, a Kryptex cita a Pearl Wallet oficial ou a corretora BigOne.
+- **Integração:** feita em 2026-11-01 só para o teste controlado (`docs/MINERADOR-SRBMINER.md`). Falta o primeiro teste real no seu computador.
 
 ## Quantus (QTC) — Poseidon2 / QPoW
 

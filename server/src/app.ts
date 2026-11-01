@@ -1,6 +1,9 @@
 // Montagem da aplicação: armazenamento, barramento, Guardião, adaptadores, gateway de LLM e runtime dos agentes.
 import { MiningStateMachine, type Transition } from './mining/state.ts';
-import type { ProcessSupervisor } from './mining/process.ts';
+import { ProcessSupervisor } from './mining/process.ts';
+import { MiningTestRunner, type TestReport } from './mining/testRunner.ts';
+import { SRBMINER } from './mining/srbminer.ts';
+import { join } from 'node:path';
 import { GpuMonitor } from './gpu/monitor.ts';
 import type { AppConfig } from './config.ts';
 import { Store } from './core/store.ts';
@@ -26,6 +29,9 @@ export interface AppOptions {
   agents?: AgentDefinition[];
   overrides?: Partial<Omit<Services, 'runtime'>>;
   gpuMonitor?: GpuMonitor;
+  /** Só para testes: binário inofensivo no lugar do SRBMiner-MULTI (caminho absoluto + SHA-256). */
+  minerBinary?: { path: string; sha256: string };
+  runnerTickMs?: number;
 }
 
 export function createApp(config: AppConfig, opts: AppOptions = {}) {
@@ -75,7 +81,27 @@ export function createApp(config: AppConfig, opts: AppOptions = {}) {
     store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, gpu, ...ext, ...opts.overrides,
   } as Services;
   runtime.register(opts.agents ?? ALL_AGENTS);
-  return { config, store, bus, guardian, limiter, http, llm, runtime, logger, luxor, gpu, mining, supervisor: undefined as ProcessSupervisor | undefined };
+  // Minerador de GPU (teste controlado): só existe com caminho absoluto + SHA-256 informados pelo operador.
+  // O hash é conferido de novo a cada início, pelo supervisor.
+  const bin = opts.minerBinary ?? (config.minerGpu.path && config.minerGpu.sha256 ? { path: config.minerGpu.path, sha256: config.minerGpu.sha256 } : undefined);
+  let supervisor: ProcessSupervisor | undefined;
+  let runner: MiningTestRunner | undefined;
+  if (bin) {
+    supervisor = new ProcessSupervisor([{ id: SRBMINER.id, path: bin.path, sha256: bin.sha256 }], now);
+    runner = new MiningTestRunner({
+      supervisor, binaryId: SRBMINER.id, mining, gpu, now,
+      putMetric: (m) => store.putMetric(m),
+      saveReport: (r: TestReport) => {
+        store.setKV('mining.lastTest', r, now());
+        bus.publish({ type: 'mining.test_report', severity: 'info', message: `Teste de mineração encerrado: ${r.motivoFim}`, data: { moeda: r.moeda, aceitas: r.shares.aceitas, rejeitadas: r.shares.rejeitadas } });
+      },
+      logDir: join(config.dataDir, 'logs'),
+      maxTempC: config.maxTempC,
+      criticalTempC: config.criticalTempC,
+      tickMs: opts.runnerTickMs,
+    });
+  }
+  return { config, store, bus, guardian, limiter, http, llm, runtime, logger, luxor, gpu, mining, supervisor, runner };
 }
 
 export type App = ReturnType<typeof createApp>;

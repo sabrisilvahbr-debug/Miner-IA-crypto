@@ -1,6 +1,7 @@
 // Configuração lida de variáveis de ambiente (ou de um arquivo .env simples).
 // Nenhum segredo é registrado em log; veja o agente 27 (Cofre de Credenciais).
 import { existsSync, readFileSync } from 'node:fs';
+import { posix as pathPosix, win32 as pathWin32 } from 'node:path';
 
 export type MinerType = 'simulated' | 'xmrig' | 'cgminer' | 'none';
 export type SourceMode = 'simulated' | 'real' | 'none';
@@ -53,6 +54,7 @@ export interface AppConfig {
   miningDataMaxAgeMin: number; // dado mais velho que isso não entra no cálculo
   gpuHashrates: Record<string, number>; // GPU_HASHRATE_<SIGLA>, mesma unidade do nethash da WhatToMine
   payoutAddresses: Record<string, string>; // PAYOUT_ADDRESS_<SIGLA>: endereço PÚBLICO de recebimento
+  minerGpu: MinerGpuConfig; // SRBMiner-MULTI para o teste controlado (caminho + SHA-256 informados pelo operador)
   energyPriceKwh?: number; // moeda local (BRL)
   localCurrency: string;
 
@@ -165,6 +167,39 @@ export function enforceNoSimulation(c: AppConfig): AppConfig {
   return c;
 }
 
+export interface MinerGpuConfig {
+  path?: string; // absoluto, terminando em SRBMiner-MULTI.exe
+  sha256?: string; // 64 hex minúsculos (Get-FileHash no Windows)
+  worker: string;
+  problemas: string[]; // motivos de recusa, mostrados no teste controlado
+}
+
+/** MINER_GPU_PATH / MINER_GPU_SHA256 / MINER_WORKER. Valor inválido é recusado e explicado, nunca corrigido. */
+export function minerGpuConfig(env: NodeJS.ProcessEnv): MinerGpuConfig {
+  const problemas: string[] = [];
+  const rawPath = str(env, 'MINER_GPU_PATH');
+  const rawHash = str(env, 'MINER_GPU_SHA256');
+  const rawWorker = str(env, 'MINER_WORKER') ?? 'rtx3050';
+  let path: string | undefined;
+  if (rawPath) {
+    const abs = pathWin32.isAbsolute(rawPath) || pathPosix.isAbsolute(rawPath);
+    const name = rawPath.split(/[\\/]/).pop() ?? '';
+    if (!abs) problemas.push('MINER_GPU_PATH precisa ser um caminho absoluto (ex.: C:\\Mineradores\\SRBMiner-Multi-3-8-1\\SRBMiner-MULTI.exe)');
+    else if (!/^SRBMiner-MULTI(\.exe)?$/i.test(name)) problemas.push('MINER_GPU_PATH precisa apontar para o arquivo SRBMiner-MULTI.exe');
+    else if (/[\0\r\n"<>|*?]/.test(rawPath)) problemas.push('MINER_GPU_PATH contém caracteres inválidos');
+    else path = rawPath;
+  }
+  let sha256: string | undefined;
+  if (rawHash) {
+    const h = rawHash.trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/.test(h)) sha256 = h;
+    else problemas.push('MINER_GPU_SHA256 precisa ter 64 caracteres hexadecimais (resultado de Get-FileHash)');
+  }
+  const worker = /^[A-Za-z0-9_-]{1,32}$/.test(rawWorker) ? rawWorker : 'rtx3050';
+  if (worker !== rawWorker) problemas.push('MINER_WORKER inválido (letras, números, _ ou -, até 32): usado "rtx3050"');
+  return { path, sha256, worker, problemas };
+}
+
 /** PAYOUT_ADDRESS_<SIGLA>: só caracteres de endereço público. Algo que pareça frase-semente (palavras com espaço) é recusado. */
 export function payoutAddresses(env: NodeJS.ProcessEnv): Record<string, string> {
   const out: Record<string, string> = {};
@@ -226,6 +261,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
     miningDataMaxAgeMin: num(env, 'MINING_DATA_MAX_AGE_MIN', 15),
     gpuHashrates: gpuHashrates(env),
     payoutAddresses: payoutAddresses(env),
+    minerGpu: minerGpuConfig(env),
     energyPriceKwh: optNum(env, 'ENERGY_PRICE_KWH'),
     localCurrency: str(env, 'LOCAL_CURRENCY') ?? 'BRL',
 
