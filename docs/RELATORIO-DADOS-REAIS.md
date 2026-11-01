@@ -65,7 +65,7 @@ Não foram encontrados `Math.random`, gráficos com dados fixos nem transações
 - `npm test`: **173 de 173** passando.
 - `npm run check:modules`: **44/44** módulos do servidor carregam sem erro.
 - `node --check` nos 4 scripts do painel: OK.
-- `npm run build` / `npm run typecheck`: **não executados aqui**, porque o `npm install` falha com `ENOTFOUND registry.npmjs.org`. Precisa ser rodado no seu computador.
+- `npm run build` (inclui `tsc`, a verificação completa de tipos): **passou** em 2026-11-01, no build da Vercel do commit `afb87b8` (Linux). Aqui não roda, porque o `npm install` falha com `ENOTFOUND registry.npmjs.org`. Ainda não foi rodado no Windows.
 
 ## 7. Como rodar no Windows
 
