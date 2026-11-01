@@ -18,6 +18,8 @@ import { buildIndicators } from '../mining/state.ts';
 import { AUTH_PHRASE, testChecklist, validateTestRequest } from '../mining/testPlan.ts';
 import { findCoin } from '../mining/catalog.ts';
 import { SRBMINER, buildSrbArgs } from '../mining/srbminer.ts';
+import { QrCode } from '../tools/qr.ts';
+import { lanAddresses, lanLink, phoneLink } from '../tools/celular.ts';
 import { sha256File } from '../mining/process.ts';
 import type { TestReport } from '../mining/testRunner.ts';
 import { buildQuote } from '../mining/quotes.ts';
@@ -328,6 +330,24 @@ export function createApiServer(app: App, webDir: string) {
     const rec = await app.supervisor.stop('interrompido pelo operador');
     if (['INICIANDO', 'MINERANDO', 'ERRO', 'TESTE AUTORIZADO'].includes(app.mining.state)) app.mining.transition('PARADA', 'operador', 'botão INTERROMPER');
     json(res, 200, { ok: true, processo: rec, estado: app.mining.state });
+  });
+
+  // ---------------- abrir no celular (QR) ----------------
+  // Só para quem está NESTE computador: o QR leva o token. O celular precisa estar no mesmo Wi-Fi.
+  route('GET', '/api/celular', (req, res) => {
+    const a = req.socket.remoteAddress ?? '';
+    if (!(a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1')) return json(res, 403, { error: 'o QR só é mostrado no próprio computador' });
+    const aberto = config.host !== '127.0.0.1' && config.host !== 'localhost' && config.host !== '::1';
+    if (!aberto || !config.apiToken) {
+      return json(res, 200, { liberado: false, motivo: 'o painel atende só este computador. Feche o painel e abra o Abrir-no-Celular.bat (ele libera o Wi-Fi com token).' });
+    }
+    const ips = lanAddresses();
+    if (!ips.length) return json(res, 200, { liberado: false, motivo: 'não encontrei o endereço deste computador na rede local. Ele está no Wi-Fi ou no cabo?' });
+    const opcoes = ips.map((ip) => {
+      const link = phoneLink(ip, config.port, config.apiToken!, config.publicLink);
+      return { ip, endereco: `http://${ip}:${config.port}`, link, linkLocal: lanLink(ip, config.port, config.apiToken!), svg: QrCode.encodeText(link).toSvg() };
+    });
+    json(res, 200, { liberado: true, linkPublico: config.publicLink, opcoes });
   });
 
   // ---------------- comandos do operador ----------------

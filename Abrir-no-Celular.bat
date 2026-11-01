@@ -1,5 +1,6 @@
 @echo off
-REM Libera o painel para o celular na mesma rede Wi-Fi (com token) e abre o painel. Mineracao continua DESATIVADA.
+REM Libera o painel para o celular na mesma rede Wi-Fi (com token) e abre o painel com o QR code.
+REM Mineracao continua DESATIVADA.
 chcp 65001 >nul
 cd /d "%~dp0"
 
@@ -16,5 +17,8 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+
+REM Endereco que abre o painel NESTE computador ja autorizado e com o QR na tela.
+for /f "usebackq delims=" %%u in (`node --experimental-strip-types --disable-warning=ExperimentalWarning server\src\tools\celular.ts --url-pc`) do set "PAINEL_URL=%%u"
 
 call "%~dp0Iniciar-Painel.bat"
