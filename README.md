@@ -27,7 +27,7 @@ npm start
 
 Abra `http://127.0.0.1:8050`.
 
-**Vercel:** o deploy publica só a pasta `public/`, uma página sem dados que explica como instalar e tem o botão "Abrir meu painel" (`http://127.0.0.1:8050`). O painel em si nunca fica na internet: ele lê a GPU e roda o minerador no seu computador.
+**Link direto (computador e celular):** https://minercriptoia.vercel.app. Na primeira visita em cada aparelho, a página pede o endereço do painel e guarda. Depois, o link abre o painel direto. No computador, o endereço é `http://127.0.0.1:8050`. Para o celular, no mesmo Wi-Fi, dê duplo clique em **`Abrir-no-Celular.bat`**: ele libera a rede local com um token fácil de digitar e mostra o endereço (ex.: `http://192.168.0.23:8050`). Para voltar a atender só o computador: `npm run celular -- --desfazer`. A página da Vercel não tem dados: o painel continua rodando só no seu computador.
 
 Testes: `npm test`. Carregamento de todos os módulos (sem dependências): `npm run check:modules`. Build e verificação de tipos: `npm install && npm run build`. Auditoria dos agentes: `npm run audit:agents` ([`docs/AUDITORIA-AGENTES.md`](docs/AUDITORIA-AGENTES.md)). Monitoramento da GPU no Windows: [`docs/GPU-WINDOWS.md`](docs/GPU-WINDOWS.md). Teste controlado com o SRBMiner-MULTI (mineração desativada até você digitar a autorização): [`docs/MINERADOR-SRBMINER.md`](docs/MINERADOR-SRBMINER.md).
 
