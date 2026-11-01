@@ -61,7 +61,7 @@ async function getCelular(over: Parameters<typeof makeApp>[0]) {
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   const b = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    const headers: Record<string, string> = over.apiToken ? { authorization: `Bearer ${over.apiToken}` } : {};
+    const headers: Record<string, string> = over?.apiToken ? { authorization: `Bearer ${over.apiToken}` } : {};
     const r = await fetch(`${b}/api/celular`, { headers });
     return { status: r.status, body: await r.json() };
   } finally {
