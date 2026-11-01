@@ -6,7 +6,7 @@
 //   /prl/api/v3/miner/workers/{address}        → count, results[worker, scheme, hashrate, shares, last_share]
 // A especificação não informa as unidades: o painel mostra isso. Pagamento "informado pela pool" não é
 // pagamento confirmado na blockchain.
-import { ADDRESS_RE, attempt, getJson, isNum, numLike, queryParam, send } from './_lib.js';
+import { attempt, getJson, isNum, numLike, pearlAddressIssue, queryParam, send } from './_lib.js';
 
 const BASE = 'https://pool.kryptex.com/prl';
 
@@ -54,14 +54,17 @@ export async function workers(addr, fetchImpl) {
 
 export default async function handler(req, res, fetchImpl = globalThis.fetch) {
   if (req.method && req.method !== 'GET') return send(res, 405, { error: 'somente leitura (GET)' });
-  const addr = (queryParam(req, 'endereco') || '').trim();
-  if (!ADDRESS_RE.test(addr)) return send(res, 400, { error: 'endereço inválido: use o endereço PÚBLICO da Pearl (só letras e números, 20 a 128 caracteres). Nunca chave privada ou frase-semente.' });
-  const [s, r, p, w] = await Promise.all([
+  const raw = queryParam(req, 'endereco') || '';
+  const issue = pearlAddressIssue(raw);
+  if (issue) return send(res, 400, { error: `Endereço inválido: ${issue}.` });
+  const addr = raw.trim().toLowerCase();
+  const sem = (x) => (x.ok || !/HTTP 404/.test(x.motivo) ? x : { ok: false, motivo: 'a Kryptex não tem registro deste endereço' });
+  const [s, r, p, w] = (await Promise.all([
     attempt('saldo', () => saldo(addr, fetchImpl)),
     attempt('resumo de pagamentos', () => resumoPagamentos(addr, fetchImpl)),
     attempt('pagamentos', () => pagamentos(addr, fetchImpl)),
     attempt('workers', () => workers(addr, fetchImpl)),
-  ]);
+  ])).map(sem);
   send(res, 200, {
     moeda: 'PRL', pool: 'Kryptex', fonte: 'https://pool.kryptex.com/openapi.yaml', consultadoEm: new Date().toISOString(),
     unidades: 'a API da Kryptex não documenta as unidades; confira na página da pool',

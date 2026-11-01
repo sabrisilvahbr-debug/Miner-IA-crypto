@@ -137,10 +137,11 @@
 
     <section aria-labelledby="h-carteira">
       <h2 id="h-carteira">Sua carteira na pool · Kryptex <span id="t-cart" class="tag ind">—</span></h2>
-      <div id="carteira"><p class="sub">Informe o endereço <b>público</b> da sua carteira Pearl para ver o saldo na pool. Nunca use chave privada ou frase-semente.</p></div>
+      <div id="carteira"><p class="sub">Cole o endereço <b>público</b> da sua carteira Pearl (começa com <span class="mono">prl1</span>) para ver o saldo na pool. Nunca use chave privada ou frase-semente.</p>
+        <p class="note">Ainda não tem carteira Pearl? <a href="https://pool.kryptex.com/articles/pearl-wallet-en" rel="noopener">Como criar (guia da Kryptex)</a>. O saldo só aparece depois de minerar para esse endereço na Kryptex.</p></div>
       <form id="f-cart" novalidate>
         <label for="endereco">Endereço Pearl (público)</label>
-        <input id="endereco" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="seu endereço PRL" />
+        <input id="endereco" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="prl1…" />
         <button class="btn ghost" type="submit">Consultar saldo</button>
       </form>
       <p class="err" id="e-cart"></p>
@@ -256,6 +257,31 @@
 
       // ---------------- carteira (Kryptex, somente leitura)
       var endereco = function () { try { return localStorage.getItem(ADDR_KEY) || ''; } catch (e) { return ''; } };
+      // Mesma conferência da função da Vercel (api/_lib.js), feita aqui no celular: texto com espaços, como uma
+      // frase-semente, nunca sai do aparelho. Endereços da Pearl: bech32m com prefixo "prl" (prl1…).
+      var B32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+      function polymod(v) {
+        var G = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3], c = 1;
+        for (var k = 0; k < v.length; k++) { var b = c >>> 25; c = ((c & 0x1ffffff) << 5) ^ v[k]; for (var i = 0; i < 5; i++) if ((b >>> i) & 1) c ^= G[i]; }
+        return c >>> 0;
+      }
+      function enderecoPearlProblema(raw) {
+        var a = String(raw || '').trim();
+        if (!a) return 'cole o endereço da sua carteira Pearl (começa com prl1…)';
+        if (/\s/.test(a)) return 'o texto tem espaços. Endereço não tem espaços. Se for uma frase-semente, não cole aqui nem em lugar nenhum';
+        if (a !== a.toLowerCase() && a !== a.toUpperCase()) return 'o endereço mistura letras maiúsculas e minúsculas: copie de novo da carteira';
+        var s = a.toLowerCase();
+        if (s.indexOf('prl1') !== 0) return 'endereços da Pearl começam com "prl1"; este começa com "' + s.slice(0, 4).replace(/[^a-z0-9]/g, '?') + '"';
+        if (s.length < 14 || s.length > 90) return 'tamanho inesperado (' + s.length + ' caracteres)';
+        var ruins = [];
+        for (var j = 4; j < s.length; j++) if (B32.indexOf(s[j]) < 0 && ruins.indexOf(s[j]) < 0) ruins.push(s[j]);
+        if (ruins.length) return 'tem caracteres que não existem em endereço Pearl (' + ruins.slice(0, 5).map(function (c) { return '"' + c + '"'; }).join(', ') + ')';
+        var v = [3, 3, 3, 0, 16, 18, 12];
+        for (var q = 4; q < s.length; q++) v.push(B32.indexOf(s[q]));
+        var pm = polymod(v);
+        if (pm !== 0x2bc830a3 && pm !== 1) return 'o dígito verificador não confere: provavelmente há um erro de digitação. Copie o endereço de novo da carteira';
+        return null;
+      }
       $('endereco').value = endereco();
       function linha(k, v) { return '<div class="row"><span class="k">' + esc(k) + '</span><span>' + v + '</span></div>'; }
       function consultar(addr) {
@@ -268,8 +294,15 @@
             var algum = s.ok || p.ok || w.ok;
             tag($('t-cart'), algum ? 'real' : 'ind', algum ? 'REAL' : 'INDISPONÍVEL');
             var h = '';
+            var semRegistro = s.ok && !s.total && !s.confirmado && !s.naoConfirmado && (!p.ok || (!p.pago && !p.aReceber)) && (!w.ok || !w.quantidade);
+            if (semRegistro) {
+              tag($('t-cart'), 'real', 'REAL');
+              $('carteira').innerHTML = '<p><b>Nenhuma mineração registrada para este endereço na Kryptex.</b></p>'
+                + '<p class="note">Saldo 0, nenhum worker e nenhum pagamento (consultado às ' + hora(j.consultadoEm) + '). É o normal antes de minerar para este endereço. O saldo aparece aqui depois que o computador minerar na Kryptex com ele.</p>';
+              return;
+            }
             h += s.ok ? linha('Saldo na pool', nf(s.total, 6) + ' PRL') + linha('Confirmado / não confirmado', nf(s.confirmado, 6) + ' / ' + nf(s.naoConfirmado, 6))
-              + linha('Pagamento automático em', nf(s.limitePagamento, 4) + ' PRL' + (s.atingidoPct == null ? '' : ' (' + nf(s.atingidoPct, 1) + '% atingido)')) : '<p class="err">' + esc(s.motivo) + '</p>';
+              + (s.limitePagamento ? linha('Pagamento automático em', nf(s.limitePagamento, 4) + ' PRL' + (s.atingidoPct == null ? '' : ' (' + nf(s.atingidoPct, 1) + '% atingido)')) : '') : '<p class="err">' + esc(s.motivo) + '</p>';
             h += p.ok ? linha('Já pago pela pool', nf(p.pago, 6) + ' PRL') + linha('A receber', nf(p.aReceber, 6) + ' PRL') + linha('Recompensa 7 dias / 30 dias', nf(p.recompensaSemana, 6) + ' / ' + nf(p.recompensaMes, 6)) : '';
             h += w.ok ? linha('Workers vistos pela pool', String(w.quantidade)) + w.lista.map(function (x) { return linha('· ' + x.nome, 'hashrate ' + nf(x.hashrate, 2) + ' · shares ' + nf(x.shares, 0)); }).join('') : '';
             if (pg.ok && pg.quantidade) h += '<p class="note">Pagamentos informados pela pool: ' + pg.quantidade + '. Último: ' + nf(pg.ultimos[0].valor, 6) + ' PRL, status "' + esc(pg.ultimos[0].statusNaPool || '?') + '"' + (pg.ultimos[0].txid ? ', transação <span class="mono">' + esc(pg.ultimos[0].txid.slice(0, 12)) + '…</span>' : '') + '. Confirmação na blockchain: <b>não verificada</b>.</p>';
@@ -280,8 +313,10 @@
       }
       $('f-cart').addEventListener('submit', function (ev) {
         ev.preventDefault();
-        var a = $('endereco').value.trim();
-        if (!/^[A-Za-z0-9]{20,128}$/.test(a)) { $('e-cart').textContent = 'Endereço inválido: use o endereço público da Pearl (só letras e números). Nunca chave privada ou frase-semente.'; return; }
+        var problema = enderecoPearlProblema($('endereco').value);
+        if (problema) { $('e-cart').textContent = 'Endereço inválido: ' + problema + '.'; return; }
+        var a = $('endereco').value.trim().toLowerCase();
+        $('endereco').value = a;
         try { localStorage.setItem(ADDR_KEY, a); } catch (e) { /* só nesta sessão */ }
         consultar(a);
       });

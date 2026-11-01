@@ -82,7 +82,8 @@ test('painel online /api/dados: só aceita leitura', async () => {
   assert.equal(r.statusCode, 405);
 });
 
-const ADDR = 'prl1qexemploenderecopublico0000';
+// Endereço SINTÉTICO no formato da Pearl (bech32m, prefixo prl), com dígito verificador válido; não é de ninguém.
+const ADDR = 'prl1pr23clxd5mzfsh79vn6pg0kaytjeq8w4ur23clxd5mzfsh79vn6pglsuavg';
 const K = `https://pool.kryptex.com/prl`;
 
 test('painel online /api/carteira: consulta só as rotas documentadas da Kryptex para o endereço', async () => {
@@ -108,7 +109,7 @@ test('painel online /api/carteira: consulta só as rotas documentadas da Kryptex
 
 test('painel online /api/carteira: recusa endereço inválido e texto que pareça frase-semente, sem consultar nada', async () => {
   const { default: h } = await load('carteira.js');
-  for (const e of ['', 'curto', 'abandon ability able about above absent absorb abstract', `${ADDR}/../../admin`, 'https://evil.example.com/x']) {
+  for (const e of ['', 'curto', 'abandon ability able about above absent absorb abstract', `${ADDR}/../../admin`, 'https://evil.example.com/x', 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', ADDR.slice(0, -1) + 'q', 'prl1qexemploenderecopublico0000']) {
     const calls: string[] = [];
     const r = res();
     await h({ method: 'GET', url: `/api/carteira?endereco=${encodeURIComponent(e)}` }, r, fakeFetch({}, calls));
@@ -123,6 +124,27 @@ test('painel online /api/carteira: endereço sem histórico na pool aparece como
   await h({ method: 'GET', url: `/api/carteira?endereco=${ADDR}` }, r, fakeFetch({}));
   const j = JSON.parse(r.body);
   assert.equal(j.saldo.ok, false);
-  assert.match(j.saldo.motivo, /HTTP 404/);
+  assert.match(j.saldo.motivo, /não tem registro/);
   assert.equal(j.saldo.total, undefined);
+});
+
+test('painel online: conferência do endereço Pearl explica o problema e aceita maiúsculas', async () => {
+  const { pearlAddressIssue } = (await import(pathToFileURL(resolve('api', '_lib.js')).href)) as { pearlAddressIssue: (a: string) => string | null };
+  assert.equal(pearlAddressIssue(ADDR), null);
+  assert.equal(pearlAddressIssue(`  ${ADDR.toUpperCase()}  `), null);
+  assert.match(pearlAddressIssue('')!, /cole o endereço/);
+  assert.match(pearlAddressIssue('abandon ability able about')!, /frase-semente/);
+  assert.match(pearlAddressIssue('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')!, /começam com "prl1"/);
+  assert.match(pearlAddressIssue(ADDR.slice(0, -1) + 'q')!, /dígito verificador/);
+  assert.match(pearlAddressIssue('prl1qexemploenderecopublico0000')!, /caracteres que não existem/);
+  assert.match(pearlAddressIssue(ADDR.slice(0, 10) + ADDR.slice(10).toUpperCase())!, /mistura/);
+});
+
+test('painel online /api/carteira: endereço em maiúsculas é consultado em minúsculas', async () => {
+  const { default: h } = await load('carteira.js');
+  const calls: string[] = [];
+  const r = res();
+  await h({ method: 'GET', url: `/api/carteira?endereco=${ADDR.toUpperCase()}` }, r, fakeFetch({}, calls));
+  assert.equal(r.statusCode, 200);
+  assert.ok(calls.length === 4 && calls.every((u) => u.includes(ADDR)));
 });
