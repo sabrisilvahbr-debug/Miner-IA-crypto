@@ -202,7 +202,7 @@ function closePanel() {
 function setActiveNav(view) {
   for (const b of document.querySelectorAll('#nav button, #tabbar button')) {
     const v = b.dataset.view;
-    b.classList.toggle('active', v === view || (v === 'more' && ['actions', 'metrics', 'reports', 'risk', 'pool', 'more'].includes(view)));
+    b.classList.toggle('active', v === view || (v === 'more' && ['actions', 'metrics', 'reports', 'risk', 'pool', 'celular', 'more'].includes(view)));
   }
 }
 
@@ -227,6 +227,7 @@ async function renderPanel() {
     if (kind === 'risk') return await panelRisk();
     if (kind === 'pool') return await panelPool();
     if (kind === 'mining') return await panelMining();
+    if (kind === 'celular') return await panelCelular();
     if (kind === 'more') return panelMore();
   } catch (e) {
     if (e instanceof UnauthorizedError) return askToken();
@@ -561,9 +562,31 @@ async function updateMiningLive() {
   if (ban && ban.textContent.startsWith('MINERAÇÃO')) { ban.textContent = `MINERAÇÃO: ${m.estado}`; ban.classList.toggle('off', m.estado === 'DESATIVADA'); }
 }
 
+// QR para abrir o painel no celular (só aparece no próprio computador; o QR leva o token).
+async function panelCelular() {
+  const r = await api('/api/celular', { allowError: true });
+  if (!r || r.error || !r.liberado) {
+    setPanel('ACESSO', 'Abrir no celular', `<div class="section"><p class="note">${esc(r?.motivo ?? r?.error ?? 'indisponível')}</p>
+      <p class="meta">O celular precisa estar no mesmo Wi-Fi deste computador. O painel nunca fica aberto para a internet.</p></div>`);
+    return;
+  }
+  const [o, ...outros] = r.opcoes;
+  setPanel('ACESSO', 'Abrir no celular', `
+    <div class="section qr-box">
+      <div class="qr"><img alt="QR code para abrir o painel no celular" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(o.svg)}"></div>
+      <p><b>Aponte a câmera do celular</b> para o código e toque no link que aparecer.</p>
+      <p class="meta">O celular abre o painel já autorizado e guarda o endereço. Depois disso, ${esc(r.linkPublico.replace(/^https:\/\//, ''))} abre o painel direto. Dica: no Safari, Compartilhar → Adicionar à Tela de Início.</p>
+    </div>
+    <div class="section"><h4>Sem câmera ou sem internet no celular</h4>
+      <p class="meta">Digite no navegador do celular: <code>${esc(o.endereco)}</code> e o token quando o painel pedir.</p>
+      ${outros.length ? `<p class="meta">Outros endereços deste computador (redes virtuais costumam não funcionar): ${outros.map((x) => `<code>${esc(x.endereco)}</code>`).join(' ')}</p>` : ''}
+      <p class="note">O código dá acesso ao painel: não mostre esta tela para outras pessoas.</p>
+    </div>`);
+}
+
 function panelMore() {
   setPanel('MENU', 'Mais opções', `<div class="list">
-    ${[['mining', 'GPU e Mineração'], ['pool', 'Pool Luxor'], ['actions', 'Ações propostas'], ['metrics', 'Métricas'], ['reports', 'Relatórios'], ['risk', 'Guardião de Risco'], ['agents', 'Lista de agentes']].map(([v, l]) => `<button class="row" data-open="${v}" style="text-align:left">${l}</button>`).join('')}
+    ${[['mining', 'GPU e Mineração'], ['celular', 'Abrir no celular'], ['pool', 'Pool Luxor'], ['actions', 'Ações propostas'], ['metrics', 'Métricas'], ['reports', 'Relatórios'], ['risk', 'Guardião de Risco'], ['agents', 'Lista de agentes']].map(([v, l]) => `<button class="row" data-open="${v}" style="text-align:left">${l}</button>`).join('')}
   </div>`);
 }
 
@@ -803,7 +826,21 @@ function connect() {
   });
 }
 
+/** Link vindo do QR ou do Abrir-no-Celular.bat: "#token=XXXX" ou "#celular:XXXX". O token fica só neste navegador
+ *  e some do endereço na hora. A parte depois do "#" nunca é enviada ao servidor. */
+function tokenFromHash() {
+  let h = '';
+  try { h = decodeURIComponent(location.hash.slice(1)); } catch { return null; }
+  if (!h) return null;
+  let open = null;
+  let m = /^celular:([A-Za-z0-9_-]{8,128})$/.exec(h);
+  if (m) { setToken(m[1]); open = 'celular'; } else if ((m = /^token=([A-Za-z0-9_-]{8,128})$/.exec(h))) setToken(m[1]);
+  if (m) history.replaceState(null, '', location.pathname + location.search);
+  return open;
+}
+
 async function main() {
+  const abrir = tokenFromHash();
   try {
     await load();
   } catch (e) {
@@ -819,6 +856,7 @@ async function main() {
   renderConsole();
   loop();
   connect();
+  if (abrir) openPanel(abrir);
   setInterval(refreshSummary, 10_000);
   setInterval(() => { if (st.panel && ['agent', 'metrics', 'alerts', 'actions'].includes(st.panel.kind) && !document.hidden) renderPanel(); }, 15_000);
   // Durante um teste, só a área do console é atualizada (o campo da frase não é apagado).

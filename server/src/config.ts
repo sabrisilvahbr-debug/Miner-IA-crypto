@@ -54,6 +54,7 @@ export interface AppConfig {
   miningDataMaxAgeMin: number; // dado mais velho que isso não entra no cálculo
   gpuHashrates: Record<string, number>; // GPU_HASHRATE_<SIGLA>, mesma unidade do nethash da WhatToMine
   payoutAddresses: Record<string, string>; // PAYOUT_ADDRESS_<SIGLA>: endereço PÚBLICO de recebimento
+  publicLink: string; // página pública que guarda o endereço do painel no celular (PUBLIC_LINK)
   minerGpu: MinerGpuConfig; // SRBMiner-MULTI para o teste controlado (caminho + SHA-256 informados pelo operador)
   energyPriceKwh?: number; // moeda local (BRL)
   localCurrency: string;
@@ -261,6 +262,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
     miningDataMaxAgeMin: num(env, 'MINING_DATA_MAX_AGE_MIN', 15),
     gpuHashrates: gpuHashrates(env),
     payoutAddresses: payoutAddresses(env),
+    publicLink: (() => { const v = str(env, 'PUBLIC_LINK'); return v && /^https:\/\/[a-z0-9.-]+(\/[A-Za-z0-9._~\/-]*)?$/i.test(v) ? v.replace(/\/+$/, '') : 'https://minercriptoia.vercel.app'; })(),
     minerGpu: minerGpuConfig(env),
     energyPriceKwh: optNum(env, 'ENERGY_PRICE_KWH'),
     localCurrency: str(env, 'LOCAL_CURRENCY') ?? 'BRL',

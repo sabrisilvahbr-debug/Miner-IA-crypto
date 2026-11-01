@@ -37,7 +37,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if not defined PAINEL_URL set "PAINEL_URL=http://127.0.0.1:8050"
 echo Abrindo o painel em http://127.0.0.1:8050 ...
-start "" cmd /c "timeout /t 3 >nul & start http://127.0.0.1:8050"
+start "" cmd /c "timeout /t 3 >nul & start "" "%PAINEL_URL%""
 call npm start
 pause

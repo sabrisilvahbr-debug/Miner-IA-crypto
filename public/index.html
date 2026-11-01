@@ -24,10 +24,28 @@
           || /\.local$/.test(h) || /\.ts\.net$/.test(h);
       } catch (e) { return false; }
     }
+    function normaliza(v) {
+      v = String(v || '').trim();
+      if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
+      try { var u = new URL(v); if (!u.port && u.protocol === 'http:') u.port = '8050'; return u.protocol + '//' + u.host + '/'; } catch (e) { return null; }
+    }
     var salvo = null;
     try { salvo = localStorage.getItem(CHAVE); } catch (e) { /* armazenamento indisponível */ }
-    if (salvo && privado(salvo) && !/[?&]trocar\b/.test(location.search)) location.replace(salvo);
-    else document.documentElement.className = '';
+    var doQr = null;
+    try { doQr = new URLSearchParams(location.search).get('p'); } catch (e) { /* navegador antigo */ }
+    var destino = doQr ? normaliza(doQr) : null;
+    if (destino && privado(destino)) {
+      // Veio do QR mostrado no computador: guarda o endereço e segue para o painel. O token (depois do "#")
+      // nunca é enviado a servidor nenhum; ele passa direto para o painel, que o guarda e apaga do endereço.
+      try { localStorage.setItem(CHAVE, destino); } catch (e) { /* abre mesmo sem lembrar */ }
+      var t = /^#t=([A-Za-z0-9_-]{8,128})$/.exec(location.hash);
+      history.replaceState(null, '', location.pathname);
+      location.replace(destino + (t ? '#token=' + t[1] : ''));
+    } else if (salvo && privado(salvo) && !/[?&]trocar\b/.test(location.search)) {
+      location.replace(salvo);
+    } else {
+      document.documentElement.className = '';
+    }
   </script>
   <style>
     :root {
@@ -73,8 +91,8 @@
       <summary>Primeira vez?</summary>
       <ol>
         <li>No computador, instale o Node.js LTS (<a href="https://nodejs.org" rel="noopener">nodejs.org</a>) e <a href="https://github.com/sabrisilvahbr-debug/Miner-IA-crypto/archive/refs/heads/main.zip">baixe o projeto</a>.</li>
-        <li>Para usar no celular, dê duplo clique em <code>Abrir-no-Celular.bat</code>. Ele mostra o endereço e o token.</li>
-        <li>Digite o endereço aqui. Depois disso, este link abre o painel direto.</li>
+        <li>Dê duplo clique em <code>Abrir-no-Celular.bat</code>. O painel abre no computador com um QR code.</li>
+        <li>Aponte a câmera do celular para o QR. Depois disso, este link abre o painel direto.</li>
       </ol>
       <p>O painel roda no seu computador e só atende a sua rede Wi-Fi, com token. Para trocar o endereço: <code>?trocar</code> no fim deste link.</p>
     </details>
@@ -88,16 +106,12 @@
       try { atual = localStorage.getItem(CHAVE); } catch (e) { /* nada */ }
       campo.value = atual || (celular ? '' : 'http://127.0.0.1:8050');
       document.getElementById('dica').innerHTML = celular
-        ? 'O endereço aparece no computador, na janela do <code>Abrir-no-Celular.bat</code>. O celular precisa estar no mesmo Wi-Fi.'
+        ? 'Mais fácil: no computador, abra o <code>Abrir-no-Celular.bat</code> e aponte a câmera para o QR code. O celular precisa estar no mesmo Wi-Fi.'
         : 'Neste computador, o endereço é <code>http://127.0.0.1:8050</code>. Antes, abra o <code>Iniciar-Painel.bat</code>.';
       document.getElementById('f').addEventListener('submit', function (ev) {
         ev.preventDefault();
-        var v = campo.value.trim();
-        if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
-        var u;
-        try { u = new URL(v); } catch (e) { erro.textContent = 'Endereço inválido. Exemplo: 192.168.0.23:8050'; return; }
-        if (!u.port && u.protocol === 'http:') u.port = '8050';
-        var destino = u.protocol + '//' + u.host + '/';
+        var destino = normaliza(campo.value);
+        if (!destino) { erro.textContent = 'Endereço inválido. Exemplo: 192.168.0.23:8050'; return; }
         if (!privado(destino)) { erro.textContent = 'Use o endereço do seu computador na rede local (ex.: 192.168.0.23:8050). Sites da internet não são aceitos.'; return; }
         try { localStorage.setItem(CHAVE, destino); } catch (e) { /* abre mesmo sem lembrar */ }
         location.href = destino;
