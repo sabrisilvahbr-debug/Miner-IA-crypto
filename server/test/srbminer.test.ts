@@ -185,7 +185,7 @@ const CSV = (temp: number) => `0, NVIDIA GeForce RTX 3050, 591.86, ${temp}, 55.0
 async function withMinerServer(fn: (b: string, app: ReturnType<typeof makeApp>) => Promise<void>, over: Parameters<typeof makeApp>[0] = {}) {
   process.env.FAKE_SRB_MODE = 'ok';
   const gpuMonitor = new GpuMonitor({ runner: async () => ({ stdout: CSV(55), stderr: '', code: 0 }) });
-  const app = makeApp({ allowedPools: [KRYPTEX], payoutAddresses: { PRL: ADDR }, dataDir: mkdtempSync(join(tmpdir(), 'srbapi-')), ...over }, { gpuMonitor, minerBinary: { path: FAKE, sha256: await sha256File(FAKE) }, runnerTickMs: 50 });
+  const app = makeApp({ allowedPools: [KRYPTEX], payoutAddresses: { PRL: ADDR }, energyPriceKwh: 0.9, dataDir: mkdtempSync(join(tmpdir(), 'srbapi-')), ...over }, { gpuMonitor, minerBinary: { path: FAKE, sha256: await sha256File(FAKE) }, runnerTickMs: 50 });
   const server = createApiServer(app, 'web');
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   const b = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -231,9 +231,17 @@ test('API: teste completo com minerador falso — pré-condições, início, MIN
     assert.equal(after.testeAtual, null);
     assert.equal(after.ultimoTeste.motivoFim, 'INTERROMPER pelo operador');
     assert.ok(existsSync(after.ultimoTeste.console.arquivo));
+    // A quantidade de leituras depende da velocidade da máquina: o resultado precisa ser coerente nos dois casos.
     const en = await (await fetch(`${b}/api/energy`)).json();
-    assert.equal(en.medido.disponivel, false, 'menos de 10 amostras: modalidade B continua indisponível');
-    assert.match(en.medido.motivo, /poucas amostras/);
+    const med = after.ultimoTeste.energiaMedida;
+    assert.ok(med && med.duringMining && med.avgW === 55, 'consumo medido só durante MINERANDO');
+    if (med.samples < 10) {
+      assert.equal(en.medido.disponivel, false);
+      assert.match(en.medido.motivo, /poucas amostras/);
+    } else {
+      assert.equal(en.medido.disponivel, true);
+      assert.ok(Math.abs(en.medido.diario - (55 / 1000) * 24 * 0.9) < 1e-9, 'modalidade B = média medida × 24 h × tarifa');
+    }
   });
 });
 
