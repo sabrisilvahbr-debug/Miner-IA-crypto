@@ -144,7 +144,7 @@ test('cotação: fórmula da fração do hashrate da rede', () => {
 });
 
 test('cotação: dado da WhatToMine com 70 minutos não entra no cálculo', () => {
-  const cfg = { ...DEFAULT_SELECTOR, energy: { powerW: 170, powerIsMeasured: false, tariffKwh: 0.9 } };
+  const cfg = { ...DEFAULT_SELECTOR, energyCostDay: 1.512 };
   const r = buildQuote(prl, coins, 1e18, realBtc);
   const e = evaluate(prl, r.quote, cfg, PEARL_TS + 70 * 60_000);
   assert.equal(e.eligible, false);
@@ -154,7 +154,7 @@ test('cotação: dado da WhatToMine com 70 minutos não entra no cálculo', () =
 test('cotação: Quantus em investigação nunca é avaliada, mesmo com dados', () => {
   const qtc = findCoin('QTC')!;
   const r = buildQuote(qtc, coins, 1e12, realBtc);
-  const cfg = { ...DEFAULT_SELECTOR, energy: { powerW: 170, powerIsMeasured: false, tariffKwh: 0.9 } };
+  const cfg = { ...DEFAULT_SELECTOR, energyCostDay: 1.512 };
   assert.equal(evaluate(qtc, r.quote, cfg, PEARL_TS).eligible, false);
 });
 

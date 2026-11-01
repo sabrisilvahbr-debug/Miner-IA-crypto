@@ -1,10 +1,13 @@
 // Seleção de moeda com proteção contra trocas desnecessárias. Determinística; não usa LLM.
 // Modo SIMULAÇÃO: esta função só decide. Ela não inicia, para nem troca nenhum minerador.
 import { CATALOG, type CoinCandidate } from './catalog.ts';
-import { DAY_MS, daysToPayout, isFresh, netDay, type EnergyInput, type MarketQuote, type NetResult } from './profitability.ts';
+import { DAY_MS, daysToPayout, isFresh, netDay, type MarketQuote, type NetResult } from './profitability.ts';
+
+export const NOT_CALCULABLE = 'RENTABILIDADE NÃO CALCULÁVEL — FALTA DE DADOS REAIS';
 
 export interface SelectorConfig {
-  energy: EnergyInput;
+  energyCostDay?: number; // custo diário de energia (modalidade escolhida); ausente = não calculável
+  otherCostsDay?: number; // outros custos diários conhecidos
   minerFee: number; // taxa do minerador/software, fração (0 se não houver)
   horizonDays: number; // horizonte para comparar trocas (ex.: 1 dia)
   downtimeMin: number; // minutos parados durante uma troca
@@ -14,7 +17,7 @@ export interface SelectorConfig {
   maxQuoteAgeMs: number; // dado mais velho que isso é tratado como indisponível
 }
 
-export const DEFAULT_SELECTOR: Omit<SelectorConfig, 'energy'> = {
+export const DEFAULT_SELECTOR: SelectorConfig = {
   minerFee: 0,
   horizonDays: 1,
   downtimeMin: 3,
@@ -44,11 +47,14 @@ export function evaluate(
 ): Evaluation {
   const base = { symbol: coin.symbol, name: coin.name, algorithm: coin.algorithm };
   if (coin.status !== 'pool_validada' || !coin.pool) return { ...base, eligible: false, reason: 'em investigação: pool e minerador não verificados' };
-  if (!quote) return { ...base, eligible: false, reason: 'sem dados de rentabilidade (fonte indisponível)' };
+  if (!quote) return { ...base, eligible: false, reason: `${NOT_CALCULABLE}: sem dados de receita (fonte indisponível)` };
   if (!isFresh(quote.collectedAt, now, cfg.maxQuoteAgeMs)) {
     return { ...base, eligible: false, reason: 'dados de rentabilidade desatualizados; não usados', quoteSource: quote.source };
   }
-  const net = netDay(quote.revenueLocalDay, coin.pool.poolFee, cfg.energy, cfg.minerFee);
+  if (cfg.energyCostDay === undefined) {
+    return { ...base, eligible: false, reason: `${NOT_CALCULABLE}: custo de energia indisponível`, quoteSource: quote.source };
+  }
+  const net = netDay(quote.revenueLocalDay, coin.pool.poolFee, cfg.energyCostDay, cfg.minerFee, cfg.otherCostsDay ?? 0);
   const paybackDays = daysToPayout(quote.coinsPerDay, coin.pool.poolFee, coin.pool.minPayout);
   const quoteAgeMin = Math.round((now - quote.collectedAt) / 60_000);
   return {

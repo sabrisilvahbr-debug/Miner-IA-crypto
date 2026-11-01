@@ -96,6 +96,6 @@ O workflow **Validar Luxor** (`.github/workflows/luxor-validacao.yml`) roda o `l
 
 Como o repositório é público, os logs também são. Por isso essa execução usa `LUXOR_CHECK_REDACT=1`: o nome do workspace, os nomes de subcontas e workers, os saldos, as receitas e o hashrate aparecem como `[oculto]`. O GitHub também mascara o valor dos segredos automaticamente.
 
-## Equipamento: RTX 3060
+## Equipamento: RTX 3050 (6 GB)
 
-A Luxor opera BTC (SHA-256), LTC/DOGE (Scrypt), SC e ZEC. Hoje todos esses são minerados por ASICs, e uma GPU como a RTX 3060 produziria hashrate próximo de zero neles. Por isso o modelo `.env.luxor.example` vem com `MINER_TYPE=none`. A integração com a API da Luxor funciona e pode ser validada mesmo assim, mas a evidência de mineração continuará no nível 0 até haver um ASIC compatível conectado.
+A Luxor opera BTC (SHA-256), LTC/DOGE (Scrypt), SC e ZEC. Hoje todos esses são minerados por ASICs, e uma GPU como a RTX 3050 produziria hashrate próximo de zero neles. Por isso o modelo `.env.luxor.example` vem com `MINER_TYPE=none`. A integração com a API da Luxor funciona e pode ser validada mesmo assim, mas a evidência de mineração continuará no nível 0 até haver um ASIC compatível conectado.

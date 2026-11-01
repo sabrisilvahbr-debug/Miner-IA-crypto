@@ -1,4 +1,10 @@
 // Montagem da aplicação: armazenamento, barramento, Guardião, adaptadores, gateway de LLM e runtime dos agentes.
+import { MiningStateMachine, type Transition } from './mining/state.ts';
+import { ProcessSupervisor } from './mining/process.ts';
+import { MiningTestRunner, type TestReport } from './mining/testRunner.ts';
+import { SRBMINER } from './mining/srbminer.ts';
+import { join } from 'node:path';
+import { GpuMonitor } from './gpu/monitor.ts';
 import type { AppConfig } from './config.ts';
 import { Store } from './core/store.ts';
 import { EventBus } from './core/eventBus.ts';
@@ -22,6 +28,10 @@ export interface AppOptions {
   llmTransport?: LlmTransport;
   agents?: AgentDefinition[];
   overrides?: Partial<Omit<Services, 'runtime'>>;
+  gpuMonitor?: GpuMonitor;
+  /** Só para testes: binário inofensivo no lugar do SRBMiner-MULTI (caminho absoluto + SHA-256). */
+  minerBinary?: { path: string; sha256: string };
+  runnerTickMs?: number;
 }
 
 export function createApp(config: AppConfig, opts: AppOptions = {}) {
@@ -51,13 +61,47 @@ export function createApp(config: AppConfig, opts: AppOptions = {}) {
     });
     ext.pool = luxor;
   }
+  // Na suíte de testes, o nvidia-smi nunca é executado: o monitor responde "ausente" a menos que o teste injete outro.
+  const gpu = opts.gpuMonitor ?? (config.appEnv === 'test'
+    ? new GpuMonitor({ now, runner: async () => { throw Object.assign(new Error('nvidia-smi não executado em testes'), { code: 'ENOENT' }); } })
+    : new GpuMonitor({ smiPath: config.nvidiaSmiPath, now }));
+  // Estado da mineração: sempre começa DESATIVADA; transições ficam no histórico e viram eventos auditáveis.
+  const mining = new MiningStateMachine({
+    now,
+    previous: store.getKV<Transition[]>('mining.transitions', []),
+    onChange: (t) => {
+      const hist = [...store.getKV<Transition[]>('mining.transitions', []), t].slice(-100);
+      store.setKV('mining.transitions', hist, now());
+      bus.publish({ type: 'mining.state', severity: t.to === 'ERRO' ? 'warn' : 'info', message: `Mineração: ${t.from} → ${t.to} (${t.origem}): ${t.motivo}`, data: { from: t.from, to: t.to, origem: t.origem } });
+    },
+  });
   const llm = new LlmGateway(store, config, now, opts.llmTransport);
   const runtime = new Runtime({ config, store, bus, guardian, logger, now });
   runtime.services = {
-    store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, ...ext, ...opts.overrides,
+    store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, gpu, ...ext, ...opts.overrides,
   } as Services;
   runtime.register(opts.agents ?? ALL_AGENTS);
-  return { config, store, bus, guardian, limiter, http, llm, runtime, logger, luxor };
+  // Minerador de GPU (teste controlado): só existe com caminho absoluto + SHA-256 informados pelo operador.
+  // O hash é conferido de novo a cada início, pelo supervisor.
+  const bin = opts.minerBinary ?? (config.minerGpu.path && config.minerGpu.sha256 ? { path: config.minerGpu.path, sha256: config.minerGpu.sha256 } : undefined);
+  let supervisor: ProcessSupervisor | undefined;
+  let runner: MiningTestRunner | undefined;
+  if (bin) {
+    supervisor = new ProcessSupervisor([{ id: SRBMINER.id, path: bin.path, sha256: bin.sha256 }], now);
+    runner = new MiningTestRunner({
+      supervisor, binaryId: SRBMINER.id, mining, gpu, now,
+      putMetric: (m) => store.putMetric(m),
+      saveReport: (r: TestReport) => {
+        store.setKV('mining.lastTest', r, now());
+        bus.publish({ type: 'mining.test_report', severity: 'info', message: `Teste de mineração encerrado: ${r.motivoFim}`, data: { moeda: r.moeda, aceitas: r.shares.aceitas, rejeitadas: r.shares.rejeitadas } });
+      },
+      logDir: join(config.dataDir, 'logs'),
+      maxTempC: config.maxTempC,
+      criticalTempC: config.criticalTempC,
+      tickMs: opts.runnerTickMs,
+    });
+  }
+  return { config, store, bus, guardian, limiter, http, llm, runtime, logger, luxor, gpu, mining, supervisor, runner };
 }
 
 export type App = ReturnType<typeof createApp>;

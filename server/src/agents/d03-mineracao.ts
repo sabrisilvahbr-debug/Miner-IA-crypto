@@ -76,22 +76,53 @@ export const mineracao: AgentDefinition[] = [
   {
     id: 14,
     code: 'A14-INVENTARIO',
-    name: 'Inventário de Hardware',
+    name: 'Inventário e Sensores da GPU',
     department: 3,
-    responsibility: 'Registra o hardware, o algoritmo e as threads informados pelo minerador.',
-    mode: 'scheduled',
-    intervalMs: HOUR,
-    permissions: ['read:miner', 'write:metrics'],
-    inputs: ['resumo do minerador'],
-    outputs: ['miner.hardware', 'miner.algo', 'miner.threads'],
+    responsibility: 'Lê a GPU pelo nvidia-smi a cada 30 s (modelo, driver, VRAM, uso, temperatura, potência e limite) e grava o histórico. Só publica valores lidos; campo sem suporte fica ausente. Registra também o hardware informado pelo minerador, se houver.',
+    mode: 'continuous',
+    intervalMs: 30 * SEC,
+    permissions: ['read:miner', 'write:metrics', 'emit:alert'],
+    inputs: ['nvidia-smi (somente leitura)', 'resumo do minerador', 'MAX_TEMP_C', 'CRITICAL_TEMP_C'],
+    outputs: ['gpu.status', 'gpu.name', 'gpu.temperature_c', 'gpu.power_w', 'gpu.power_limit_w', 'gpu.utilization_pct', 'gpu.memory_used_mib', 'gpu.memory_total_mib', 'gpu.driver', 'miner.hardware'],
     maturity: 'simulado',
     async run(ctx) {
-      const s = await ctx.services.miner.summary();
       const out: MetricInput[] = [];
-      if (s.hardware) out.push(metric('miner.hardware', s.hardware, s.provenance, s.source));
-      if (s.algo) out.push(metric('miner.algo', s.algo, s.provenance, s.source));
-      if (s.threads !== undefined) out.push(metric('miner.threads', s.threads, s.provenance, s.source));
-      return { status: 'ok', summary: `${s.hardware ?? 'hardware não informado'} · algoritmo ${s.algo ?? '?'}`, metrics: out };
+      const v = await ctx.services.gpu.read();
+      out.push(metric('gpu.status', v.status, 'real', 'nvidia-smi'));
+      let summary = `GPU: ${v.mensagem}`;
+      const sampleAt = ctx.services.gpu.lastSampleAt();
+      const fresh = v.status === 'ok' && v.gpus && sampleAt !== undefined && sampleAt !== ctx.memory.lastGpuSample;
+      if (v.status === 'ok' && v.gpus && fresh) {
+        ctx.memory.lastGpuSample = sampleAt;
+        const g = v.gpus[0]; // a primeira GPU listada; as demais aparecem em /api/gpu
+        const src = 'nvidia-smi';
+        const ts = sampleAt;
+        const push = (key: string, val: number | string | null, unit?: string) => {
+          if (val !== null && val !== undefined) out.push({ ...metric(key, val, 'real', src, unit), ts });
+        };
+        push('gpu.name', g.name);
+        push('gpu.driver', g.driverVersion);
+        push('gpu.temperature_c', g.temperatureC, '°C');
+        push('gpu.power_w', g.powerW, 'W (somente GPU)');
+        push('gpu.power_limit_w', g.powerLimitW, 'W');
+        push('gpu.utilization_pct', g.utilizationPct, '%');
+        push('gpu.memory_used_mib', g.memoryUsedMiB, 'MiB');
+        push('gpu.memory_total_mib', g.memoryTotalMiB, 'MiB');
+        if (g.temperatureC !== null) {
+          if (g.temperatureC >= ctx.config.criticalTempC) ctx.raiseAlert('gpu.temp.critical', 'critical', `GPU em temperatura crítica: ${g.temperatureC} °C`);
+          else if (g.temperatureC >= ctx.config.maxTempC) ctx.raiseAlert('gpu.temp.high', 'warn', `GPU com temperatura elevada: ${g.temperatureC} °C`);
+        }
+        summary = `${g.name} · ${g.temperatureC ?? '—'} °C · ${g.powerW ?? '—'} W de ${g.powerLimitW ?? '—'} W · uso ${g.utilizationPct ?? '—'}% (leitura real, somente GPU)`;
+      } else if (v.status === 'ok') {
+        summary = 'GPU: mesma amostra da leitura anterior (não gravada de novo)';
+      }
+      try {
+        const s = await ctx.services.miner.summary();
+        if (s.hardware) out.push(metric('miner.hardware', s.hardware, s.provenance, s.source));
+        if (s.algo) out.push(metric('miner.algo', s.algo, s.provenance, s.source));
+        if (s.threads !== undefined) out.push(metric('miner.threads', s.threads, s.provenance, s.source));
+      } catch { /* sem minerador: nada a registrar */ }
+      return { status: v.status === 'ok' ? 'ok' : 'disconnected', summary, metrics: out };
     },
   },
   {

@@ -14,7 +14,10 @@
     "typecheck": "tsc -p tsconfig.json",
     "luxor:check": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/luxor-check.ts",
     "build": "tsc -p tsconfig.json && node --check web/js/app.js && node --check web/js/office.js && node --check web/js/iso.js && node --check web/js/api.js",
-    "token": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('base64url'))\""
+    "token": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('base64url'))\"",
+    "audit:agents": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/agents-audit.ts",
+    "setup": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/setup-env.ts",
+    "check:modules": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/check-modules.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -1,4 +1,5 @@
-// Catálogo de moedas candidatas para a GPU (RTX 3060). Somente dados verificados em fontes oficiais.
+// Catálogo de moedas candidatas para a GPU do operador (NVIDIA GeForce RTX 3050, 6 GB, limite de 70 W, lido pelo nvidia-smi).
+// Somente dados verificados nas fontes indicadas. Fontes de cada item: docs/INTEGRACOES-GPU.md.
 // Status:
 //  - pool_validada: pool, endereço de stratum, algoritmo, taxa e pagamento mínimo conferidos na página da pool.
 //                   Elegível para a SIMULAÇÃO. Ainda falta validar login e software antes de qualquer ativação real.
@@ -16,12 +17,30 @@ export interface PoolInfo {
   verifiedAt: string; // AAAA-MM-DD
 }
 
+/**
+ * Como o SRBMiner-MULTI minera esta moeda num teste controlado. Só existe quando a pool publica o comando
+ * completo (algoritmo, endereço:porta e formato do login) para esse minerador. Nada aqui é deduzido.
+ */
+export interface MinerProfile {
+  miner: 'srbminer-multi';
+  algorithm: string; // valor de --algorithm, como publicado
+  poolName: string;
+  poolHostPort: string; // valor de --pool, como publicado (sem esquema)
+  stratumUrl: string; // forma usada em ALLOWED_POOLS
+  loginFormat: 'CARTEIRA.WORKER';
+  poolFee: number;
+  sourceUrl: string; // página que publica o comando
+  verifiedAt: string;
+  compatibilidade: string; // o que as fontes dizem sobre a RTX 3050 (indicação, não comprovação)
+}
+
 export interface CoinCandidate {
   symbol: string;
   name: string;
   algorithm: string;
   status: CoinStatus;
   pool?: PoolInfo;
+  minerProfile?: MinerProfile;
   wtmTag?: string; // sigla da moeda na WhatToMine (pode diferir da sigla da pool)
   wtmAlgorithm?: string; // nome do algoritmo na WhatToMine, conferido com a pool
   pendencias: string[]; // o que ainda falta validar
@@ -45,19 +64,37 @@ export const CATALOG: CoinCandidate[] = [
       sourceUrl: 'https://2miners.com/prl-mining-pool',
       verifiedAt: VERIFIED_AT,
     },
+    // Teste controlado: a 2Miners não publica o login da Pearl; a Kryptex publica o comando completo do SRBMiner-MULTI:
+    // "SRBMiner-MULTI.exe --disable-cpu --algorithm pearlhash --pool prl.kryptex.network:7048 --wallet WALLET_ADDRESS.WORKER"
+    // e lista o servidor da América do Sul "stratum+tcp://prl-br.kryptex.network:7048" (verificado em 2026-11-01).
+    minerProfile: {
+      miner: 'srbminer-multi',
+      algorithm: 'pearlhash',
+      poolName: 'Kryptex (América do Sul)',
+      poolHostPort: 'prl-br.kryptex.network:7048',
+      stratumUrl: 'stratum+tcp://prl-br.kryptex.network:7048',
+      loginFormat: 'CARTEIRA.WORKER',
+      poolFee: 0.01,
+      sourceUrl: 'https://pool.kryptex.com/articles/how-to-mine-pearl-en',
+      verifiedAt: '2026-11-01',
+      compatibilidade: 'indicada, não comprovada: hashrate.no lista a RTX 3050 8GB (31,34 Th/s); SRBMiner-MULTI 3.8.1 cita pearlhash para NVIDIA série 3000. A RTX 3050 6 GB só é comprovada pelo teste.',
+    },
     pendencias: [
-      'formato de login/worker não publicado na página da pool',
-      'software de mineração compatível com PearlHash na RTX 3060 não verificado',
+      'formato de login/worker não publicado na página da 2Miners (a Kryptex documenta WALLET.WORKER para o SRBMiner-MULTI)',
+      'RTX 3050 de 6 GB sem benchmark próprio: a hashrate.no lista só a RTX 3050 8GB (31,34 Th/s, 0,560 Th/W); a VRAM mínima não é informada',
+      'SRBMiner-MULTI 3.8.1 (github.com/doktor83/SRBMiner-Multi) cita pearlhash para "NVIDIA 2000, 3000, 4000 and 5000 series"; publica só MD5, não SHA-256, e a taxa do desenvolvedor para pearlhash não foi confirmada',
     ],
   },
   {
     symbol: 'QTC',
     name: 'Quantus',
     algorithm: 'Poseidon2',
-    // Rebaixada em 2026-10-29: algoritmo diverge entre as fontes (2Miners: Poseidon2; WhatToMine: QPoW)
-    // e, na WhatToMine, a sigla QTC pertence a outra moeda (Qubitcoin). A Quantus aparece como QUANTUS.
-    status: 'investigar',
+    // 2026-10-29: a Kryptex esclarece que "Poseidon2 hash (the QPoW algorithm)" é o mesmo algoritmo, então
+    // a divergência de nomes entre 2Miners (Poseidon2) e WhatToMine (QPoW) não é conflito.
+    // Na WhatToMine, a sigla QTC é de outra moeda (Qubitcoin); a Quantus aparece como QUANTUS.
+    status: 'pool_validada',
     wtmTag: 'QUANTUS',
+    wtmAlgorithm: 'QPoW',
     pool: {
       name: '2Miners (PPLNS)',
       stratumUrl: 'stratum+tcp://qtc.2miners.com:3636',
@@ -67,10 +104,9 @@ export const CATALOG: CoinCandidate[] = [
       verifiedAt: VERIFIED_AT,
     },
     pendencias: [
-      'algoritmo diverge: 2Miners informa Poseidon2, WhatToMine informa QPoW',
-      'na WhatToMine a sigla QTC é da Qubitcoin; a Quantus aparece como QUANTUS',
-      'formato de login/worker não publicado na página da pool',
-      'software de mineração compatível na RTX 3060 não verificado',
+      'formato de login/worker não publicado na página da 2Miners',
+      'a Kryptex cita só o SRBMiner-MULTI (taxa do desenvolvedor de 2,5%) e "Nvidia (RTX 3000-series and newer)"; a RTX 3050 6 GB não é citada nominalmente',
+      'hashrate da RTX 3050 em Quantus não encontrado em benchmark público',
     ],
   },
   {

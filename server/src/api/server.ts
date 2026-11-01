@@ -12,21 +12,38 @@ import { verifyAuditChain, buildReceiptsCsv } from '../agents/d09-auditoria.ts';
 import { MAINTENANCE_TASKS } from '../agents/d08-automacao.ts';
 import { matchesPattern } from '../core/eventBus.ts';
 import { luxorMinerConfig, LUXOR_DOCS } from '../adapters/luxor.ts';
-import { DEFAULT_SELECTOR, activeCandidates } from '../mining/selector.ts';
+import { DEFAULT_SELECTOR, NOT_CALCULABLE, activeCandidates } from '../mining/selector.ts';
+import { energyReport } from '../mining/energy.ts';
+import { buildIndicators } from '../mining/state.ts';
+import { AUTH_PHRASE, testChecklist, validateTestRequest } from '../mining/testPlan.ts';
+import { findCoin } from '../mining/catalog.ts';
+import { SRBMINER, buildSrbArgs } from '../mining/srbminer.ts';
+import { sha256File } from '../mining/process.ts';
+import type { TestReport } from '../mining/testRunner.ts';
 import { buildQuote } from '../mining/quotes.ts';
 import type { MarketQuote } from '../mining/profitability.ts';
 import { WhatToMineSource } from '../adapters/whattomine.ts';
 import { autoMiningSnapshot } from '../mining/simulation.ts';
-import { GpuMonitor } from '../gpu/monitor.ts';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon',
 };
 
-const STREAM_TYPES = ['agent.state', 'agent.*', 'alert.*', 'action.*', 'system.*', 'strategy.*', 'pool.*', 'wallet.*'];
+const STREAM_TYPES = ['agent.state', 'agent.*', 'alert.*', 'action.*', 'system.*', 'strategy.*', 'pool.*', 'wallet.*', 'mining.*'];
 
 type Handler = (req: IncomingMessage, res: ServerResponse, params: Record<string, string>, url: URL) => Promise<void> | void;
+
+/** Aceita requisição sem cabeçalho Origin (ferramentas locais) ou com Origin igual ao Host atendido. */
+export function sameOrigin(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === String(req.headers.host ?? '');
+  } catch {
+    return false;
+  }
+}
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -107,6 +124,9 @@ export function createApiServer(app: App, webDir: string) {
       actionsPending: store.listActions({ status: 'pendente_operador' }).length,
       llm: llm.status(),
       sources: { market: config.marketSource, network: config.networkSource, miner: config.minerType, pool: config.poolSource, wallet: config.walletSource },
+      appEnv: config.appEnv,
+      simulationRejected: config.simulationRejected,
+      mining: app.mining.state,
       uptimeS: Math.floor((runtime.now() - runtime.startedAt) / 1000),
     });
   });
@@ -166,23 +186,30 @@ export function createApiServer(app: App, webDir: string) {
   });
 
   // ---------------- GPU (somente leitura pelo nvidia-smi; nenhum minerador é consultado ou iniciado) ----------------
-  const gpu = new GpuMonitor({ smiPath: config.nvidiaSmiPath });
-  route('GET', '/api/gpu', async (_q, res) => json(res, 200, await gpu.read()));
+  route('GET', '/api/gpu', async (_q, res) => json(res, 200, { ...(await app.gpu.read()), mineracao: app.mining.state }));
 
-  // ---------------- seleção automática de moeda (SIMULAÇÃO, somente leitura) ----------------
+  // ---------------- rentabilidade de GPU (recomendação; mineração DESATIVADA) ----------------
   const wtm = config.miningDataSource === 'whattomine' ? new WhatToMineSource(app.http) : undefined;
+  const energyNow = () => {
+    const lim = store.latestMetric('gpu.power_limit_w');
+    return energyReport({
+      mode: config.energyCostMode,
+      tariffKwh: config.energyPriceKwh,
+      monthlyCostInformed: config.energyMonthlyCostLocal,
+      declaredPowerW: config.powerWatts,
+      hoursPerDay: config.operationHoursPerDay,
+      daysPerMonth: config.energyDaysPerMonth,
+      gpuPowerLimitW: lim && lim.provenance === 'real' && typeof lim.value === 'number' ? lim.value : undefined,
+    }, store.getKV<TestReport | null>('mining.lastTest', null)?.energiaMedida); // modalidade B: só amostras do último teste em MINERANDO
+  };
+  route('GET', '/api/energy', (_q, res) => json(res, 200, { moeda: config.localCurrency, ...energyNow() }));
   route('GET', '/api/auto-mining', async (_q, res) => {
-    // Consumo e tarifa: valores do .env quando informados; senão, padrões identificados como estimativa.
-    const energy = {
-      powerW: config.powerWatts ?? 170, // TDP máximo da RTX 3060 (estimativa)
-      powerIsMeasured: config.powerWatts !== undefined,
-      tariffKwh: config.energyPriceKwh ?? 0.9, // tarifa inicial da especificação (R$/kWh)
-    };
-    const cfg = { ...DEFAULT_SELECTOR, energy, maxQuoteAgeMs: config.miningDataMaxAgeMin * 60_000 };
+    const energia = energyNow();
+    const cfg = { ...DEFAULT_SELECTOR, energyCostDay: energia.custoDiario, maxQuoteAgeMs: config.miningDataMaxAgeMin * 60_000 };
     const now = Date.now();
     const quotes: MarketQuote[] = [];
     const motivos: Record<string, string> = {};
-    let fonte = 'indisponível: MINING_DATA_SOURCE=none (nenhuma fonte de rentabilidade habilitada)';
+    let fonte = 'INDISPONÍVEL: MINING_DATA_SOURCE=none (nenhuma fonte de rentabilidade habilitada)';
     let fonteStatus: Record<string, unknown> = { habilitada: false };
     if (wtm) {
       const st = await wtm.coins();
@@ -191,12 +218,12 @@ export function createApiServer(app: App, webDir: string) {
       for (const coin of activeCandidates()) {
         const r = buildQuote(coin, st.ok ? st.coins : undefined, config.gpuHashrates[coin.symbol], btc);
         if (r.quote) quotes.push(r.quote);
-        else motivos[coin.symbol] = st.ok ? r.reason : st.reason;
+        else motivos[coin.symbol] = `${NOT_CALCULABLE}: ${st.ok ? r.reason : st.reason}`;
       }
       const coinAges = st.ok
         ? Object.fromEntries(activeCandidates().filter((c) => c.wtmTag).map((c) => {
             const w = st.coins.find((x) => x.tag === c.wtmTag);
-            return [c.symbol, w ? { idadeMin: Math.round((now - w.timestampMs) / 60_000), atrasado: w.lagging, algoritmo: w.algorithm } : null];
+            return [c.symbol, w ? { atualizadoEm: new Date(w.timestampMs).toISOString(), idadeMin: Math.round((now - w.timestampMs) / 60_000), atrasado: w.lagging, algoritmo: w.algorithm } : null];
           }))
         : {};
       fonte = st.ok ? 'whattomine + coinbase (estimado)' : st.reason;
@@ -206,12 +233,101 @@ export function createApiServer(app: App, webDir: string) {
         consultadoEm: new Date(st.ok ? st.fetchedAt : st.at).toISOString(),
         entradasRejeitadas: st.ok ? st.rejected : undefined,
         moedas: coinAges,
-        cotacaoBtc: btc ? { procedencia: btc.provenance, idadeMin: Math.round((now - btc.ts) / 60_000) } : null,
+        cotacaoBtc: btc ? { procedencia: btc.provenance, fonte: p!.source, atualizadoEm: new Date(btc.ts).toISOString(), idadeMin: Math.round((now - btc.ts) / 60_000) } : null,
         limiteIdadeMin: config.miningDataMaxAgeMin,
       };
     }
     const snap = autoMiningSnapshot(cfg, quotes, now, { motivos, fonte });
-    json(res, 200, { ...snap, fonteStatus, energia: { ...energy, tarifaDoEnv: config.energyPriceKwh !== undefined } });
+    const calculavel = snap.moedas.some((m) => m.eligible);
+    json(res, 200, {
+      ...snap,
+      rentabilidade: calculavel ? 'ESTIMADA (nunca garantida)' : NOT_CALCULABLE,
+      moeda: config.localCurrency,
+      periodo: 'dia',
+      mineracao: app.mining.state,
+      fonteStatus,
+      energia,
+    });
+  });
+
+  // ---------------- estado da mineração e teste controlado ----------------
+  // O minerador só conta como integrado se o arquivo existe AGORA e o SHA-256 confere com o informado no .env.
+  const minerCheck = async (): Promise<{ ok: boolean; detalhe: string }> => {
+    const mg = config.minerGpu;
+    if (mg.problemas.length) return { ok: false, detalhe: `configuração recusada: ${mg.problemas.join('; ')}` };
+    if (!app.supervisor || !mg.path || !mg.sha256) {
+      if (app.supervisor) return { ok: true, detalhe: 'binário de teste injetado (somente testes automatizados)' };
+      return { ok: false, detalhe: `informe MINER_GPU_PATH (caminho do ${SRBMINER.exeName}) e MINER_GPU_SHA256 no .env; veja docs/MINERADOR-SRBMINER.md` };
+    }
+    try {
+      const h = await sha256File(mg.path);
+      return h === mg.sha256
+        ? { ok: true, detalhe: `${SRBMINER.name}: ${mg.path} · SHA-256 conferido agora (${h.slice(0, 12)}…)` }
+        : { ok: false, detalhe: `SHA-256 NÃO confere: arquivo ${h.slice(0, 12)}…, informado ${mg.sha256.slice(0, 12)}…. Não execute: baixe de novo da página oficial` };
+    } catch (e) {
+      return { ok: false, detalhe: `arquivo não encontrado ou ilegível em MINER_GPU_PATH (${(e as NodeJS.ErrnoException).code ?? 'erro'}). Se o antivírus moveu o arquivo para a quarentena, a decisão de liberar é sua: o sistema não desativa proteções` };
+    }
+  };
+  route('GET', '/api/mining/state', (_q, res) => {
+    const get = (k: string) => store.latestMetric(k);
+    json(res, 200, {
+      ...app.mining.snapshot(),
+      indicadores: buildIndicators(get, app.supervisor ? app.supervisor.isRunning() : undefined, Date.now()),
+      processo: app.supervisor?.last() ?? null,
+      testeAtual: app.runner?.active() ? app.runner.current() : null,
+      ultimoTeste: store.getKV('mining.lastTest', null),
+      minerador: { nome: `${SRBMINER.name} ${SRBMINER.version}`, configurado: !!app.supervisor, worker: config.minerGpu.worker, problemas: config.minerGpu.problemas },
+      historico: app.mining.history().slice(-20),
+    });
+  });
+  const checklistFor = async (body: unknown) => {
+    const req = validateTestRequest(body);
+    if (typeof req === 'string') return { erro: req };
+    const gpu = await app.gpu.read(true);
+    const mc = await minerCheck();
+    return { req, ...testChecklist({ req, gpu, allowedPools: config.allowedPools, payoutAddresses: config.payoutAddresses, minerIntegrated: mc.ok, minerDetail: mc.detalhe, maxTempC: config.maxTempC, criticalTempC: config.criticalTempC, busy: !!app.runner?.active() }) };
+  };
+  const toReady = (motivo: string) => {
+    if (['DESATIVADA', 'PARADA', 'DADOS INDISPONÍVEIS'].includes(app.mining.state)) app.mining.transition('PRONTA PARA TESTE', 'operador', motivo);
+  };
+  route('POST', '/api/mining/test/check', async (req, res) => {
+    const r = await checklistFor(await readBody(req));
+    if ('erro' in r) return json(res, 400, { error: r.erro });
+    if (r.pronto) toReady('todas as pré-condições conferidas');
+    else if (app.mining.state === 'PRONTA PARA TESTE') app.mining.transition('DESATIVADA', 'operador', 'pré-condição deixou de ser atendida');
+    json(res, 200, { ...r, estado: app.mining.state });
+  });
+  route('POST', '/api/mining/test/start', async (req, res) => {
+    const body = await readBody(req);
+    if (body.confirmacao !== AUTH_PHRASE) return json(res, 400, { error: `autorização explícita ausente: digite a frase exata "${AUTH_PHRASE}"`, estado: app.mining.state });
+    const r = await checklistFor(body);
+    if ('erro' in r) return json(res, 400, { error: r.erro });
+    if (!r.pronto) return json(res, 409, { error: 'pré-condições não atendidas: teste não iniciado', checks: r.checks, estado: app.mining.state });
+    if (!app.runner) return json(res, 409, { error: 'minerador não configurado', estado: app.mining.state });
+    const coin = findCoin(r.req.coin)!;
+    let args: string[];
+    try {
+      args = buildSrbArgs({ profile: coin.minerProfile!, wallet: config.payoutAddresses[r.req.coin], worker: config.minerGpu.worker, gpuOffTempC: Math.round(config.maxTempC) });
+    } catch (e) {
+      return json(res, 409, { error: `teste não iniciado: ${(e as Error).message}`, estado: app.mining.state });
+    }
+    toReady('pré-condições conferidas no início do teste');
+    try {
+      const teste = await app.runner.start({ coin: r.req.coin, durationMin: r.req.durationMin, args, profile: coin.minerProfile!, worker: config.minerGpu.worker });
+      json(res, 200, { ok: true, estado: app.mining.state, teste, checks: r.checks });
+    } catch (e) {
+      json(res, 500, { error: `teste não iniciado: ${(e as Error).message}`, estado: app.mining.state, ultimoTeste: store.getKV('mining.lastTest', null) });
+    }
+  });
+  route('POST', '/api/mining/stop', async (_q, res) => {
+    if (app.runner?.active()) {
+      const rep = await app.runner.stop('INTERROMPER pelo operador');
+      return json(res, 200, { ok: true, mensagem: 'teste interrompido; processo encerrado e confirmado', estado: app.mining.state, teste: rep, processo: app.supervisor?.last() ?? null });
+    }
+    if (!app.supervisor || !app.supervisor.isRunning()) return json(res, 200, { ok: true, mensagem: 'nenhum processo de mineração ativo', estado: app.mining.state });
+    const rec = await app.supervisor.stop('interrompido pelo operador');
+    if (['INICIANDO', 'MINERANDO', 'ERRO', 'TESTE AUTORIZADO'].includes(app.mining.state)) app.mining.transition('PARADA', 'operador', 'botão INTERROMPER');
+    json(res, 200, { ok: true, processo: rec, estado: app.mining.state });
   });
 
   // ---------------- comandos do operador ----------------
@@ -270,8 +386,13 @@ export function createApiServer(app: App, webDir: string) {
   });
 
   // ---------------- autenticação e estáticos ----------------
+  const isLoopback = (req: IncomingMessage) => {
+    const a = req.socket.remoteAddress ?? '';
+    return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+  };
   const authorized = (req: IncomingMessage, url: URL) => {
-    if (!config.apiToken) return true;
+    // Sem API_TOKEN, só o próprio computador é atendido (nunca a rede local).
+    if (!config.apiToken) return isLoopback(req);
     const h = String(req.headers.authorization ?? '');
     const tok = h.startsWith('Bearer ') ? h.slice(7) : url.searchParams.get('token') ?? '';
     return safeEqual(tok, config.apiToken);
@@ -282,9 +403,12 @@ export function createApiServer(app: App, webDir: string) {
     const url = new URL(req.url ?? '/', 'http://localhost');
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('referrer-policy', 'no-referrer');
+    res.setHeader('x-frame-options', 'DENY');
     try {
       if (url.pathname.startsWith('/api/')) {
         if (url.pathname !== '/api/health' && !authorized(req, url)) return json(res, 401, { error: 'não autorizado' });
+        // Validação de origem: comandos (não-GET) vindos de outra página são recusados.
+        if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) return json(res, 403, { error: 'origem não permitida' });
         for (const r of routes) {
           if (r.method !== req.method) continue;
           const m = url.pathname.match(r.pattern);

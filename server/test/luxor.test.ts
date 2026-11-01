@@ -57,8 +57,9 @@ test('Luxor: nenhuma consulta de dados antes da autenticação ser aceita', asyn
   assert.equal(calls.length, 1, 'somente /workspace foi chamado');
   assert.equal(pool.validation.state, 'falhou');
   assert.equal(pool.validation.httpStatus, 401);
-  assert.equal(s.provenance, 'simulado');
-  assert.match(s.fallbackReason!, /não validada/);
+  assert.match(s.fallbackReason!, /INDISPONÍVEL.*não validada/);
+  assert.equal(s.balance, undefined, 'sem autenticação não existe saldo — nada é simulado');
+  assert.equal(s.hashrateHs, undefined);
 });
 
 test('Luxor: autenticada com mineradores ativos → dados reais e verificados', async () => {
@@ -73,13 +74,13 @@ test('Luxor: autenticada com mineradores ativos → dados reais e verificados', 
   assert.equal(s.hashrateHs, undefined, 'unidade do hashrate não é documentada: não é convertida');
 });
 
-test('Luxor: autenticada mas sem mineradores ativos → pool fica simulada e explica o motivo', async () => {
+test('Luxor: autenticada mas sem mineradores ativos → dados reais da conta e POOL NÃO CONECTADA', async () => {
   const { f } = fakeLuxor({ '/workspace': { status: 200, body: WORKSPACE }, '/pool/summary/BTC': { status: 200, body: summary(0) } });
   const pool = new LuxorPool(new LuxorClient({ baseUrl: BASE, apiKey: KEY, fetchImpl: f }), cfg());
   const s = await pool.stats();
   assert.equal(pool.validation.state, 'validada');
-  assert.equal(s.provenance, 'simulado');
-  assert.match(s.fallbackReason!, /nenhum minerador ativo/);
+  assert.equal(s.provenance, 'real');
+  assert.match(s.fallbackReason!, /POOL NÃO CONECTADA.*nenhum minerador ativo/);
   assert.equal(s.luxor?.balance, 0.0031, 'os dados reais da conta continuam disponíveis em luxor.*');
 });
 
@@ -91,12 +92,13 @@ test('Luxor: resposta fora do esquema não é aceita como validação', async ()
   assert.equal(pool.validation.dataVerified, false);
 });
 
-test('Luxor: API inacessível → fallback simulado, sem lançar erro', async () => {
+test('Luxor: API inacessível → INDISPONÍVEL, sem lançar erro e sem dados inventados', async () => {
   const f = (async () => { throw new Error('getaddrinfo ENOTFOUND'); }) as typeof fetch;
   const pool = new LuxorPool(new LuxorClient({ baseUrl: BASE, apiKey: KEY, fetchImpl: f }), cfg());
   const s = await pool.stats();
   assert.equal(pool.validation.state, 'inacessivel');
-  assert.equal(s.provenance, 'simulado');
+  assert.match(s.fallbackReason!, /INDISPONÍVEL/);
+  assert.equal(s.balance, undefined);
 });
 
 test('Luxor: a chave nunca aparece em erros, logs, API ou métricas', async () => {
@@ -111,14 +113,15 @@ test('Luxor: a chave nunca aparece em erros, logs, API ou métricas', async () =
   assert.equal(maskKey(KEY), 'api-…0000');
 });
 
-test('Luxor: agente 21 publica estado da autenticação e motivo do modo simulado', async () => {
+test('Luxor: agente 21 publica estado da autenticação e o motivo de a pool não estar conectada', async () => {
   const { f } = fakeLuxor({ '/workspace': { status: 200, body: WORKSPACE }, '/pool/summary/BTC': { status: 200, body: summary(0) } });
   const app = makeApp(cfg(), { fetchImpl: f });
   await app.runtime.runOnce(21);
   assert.equal(app.store.latestMetric('luxor.auth')?.value, 'validada');
   assert.equal(app.store.latestMetric('luxor.data_verified')?.value, true);
   assert.equal(app.store.latestMetric('luxor.active_miners')?.provenance, 'real');
-  assert.equal(app.store.latestMetric('pool.source_mode')?.value, 'simulado');
+  assert.equal(app.store.latestMetric('pool.source_mode')?.value, 'indisponível');
+  assert.equal(app.store.latestMetric('pool.connected')?.value, false);
   assert.match(String(app.store.latestMetric('pool.fallback_reason')?.value), /nenhum minerador ativo/);
   assert.equal(app.runtime.agent(21)?.state, 'operacional');
 });

@@ -22,7 +22,7 @@ export const pools: AgentDefinition[] = [
     code: 'A21-CONECTOR-POOL',
     name: 'Conector de Pools',
     department: 5,
-    responsibility: 'Consulta a pool principal (Luxor, via API oficial somente leitura, ou endpoint JSON) após autenticação válida; sem autenticação ou sem mineradores ativos, mantém as métricas simuladas e publica o motivo.',
+    responsibility: 'Consulta a pool principal (Luxor, via API oficial somente leitura, ou endpoint JSON) após autenticação válida. Sem autenticação, a pool fica INDISPONÍVEL; sem worker ativo, NÃO CONECTADA. Nunca preenche com dados simulados.',
     mode: 'scheduled',
     intervalMs: 2 * MIN,
     permissions: ['read:pool', 'write:metrics'],
@@ -34,7 +34,7 @@ export const pools: AgentDefinition[] = [
       try {
         const s = (await pool.stats()) as LuxorPoolStats;
         const out: MetricInput[] = [metric('pool.connected', !s.fallbackReason, s.provenance, s.source)];
-        out.push(metric('pool.source_mode', s.provenance, 'real', 'conector'));
+        out.push(metric('pool.source_mode', s.fallbackReason ? 'indisponível' : s.provenance, 'real', 'conector'));
         out.push(metric('pool.fallback_reason', s.fallbackReason ?? '', 'real', 'conector'));
         if (s.hashrateHs !== undefined) out.push(metric('pool.hashrate_hs', s.hashrateHs, s.provenance, s.source, 'H/s'));
         if (s.validation) {
@@ -56,7 +56,7 @@ export const pools: AgentDefinition[] = [
             metric('luxor.subaccounts', l.subaccounts.join(', ') || '(nenhuma)', 'real', 'luxor'),
           );
         }
-        const why = s.fallbackReason ? ` · métricas de pool SIMULADAS: ${s.fallbackReason}` : '';
+        const why = s.fallbackReason ? ` · ${s.fallbackReason}` : '';
         return { status: 'ok', summary: `Pool ${s.source}${s.luxor ? ` · ${s.luxor.activeMiners} minerador(es) ativo(s) na Luxor` : ''}${why}`, metrics: out };
       } catch (e) {
         if (e instanceof DisconnectedError) {

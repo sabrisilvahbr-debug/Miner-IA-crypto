@@ -5,7 +5,6 @@ import type { Provenance } from '../core/types.ts';
 import type { AppConfig } from '../config.ts';
 import { DisconnectedError, RateLimitedError, type RateLimiter } from '../core/rateLimiter.ts';
 import type { PoolAdapter, PoolStats } from './external.ts';
-import { SimulatedPool } from './external.ts';
 
 export const LUXOR_DOCS = 'https://docs.luxor.tech/platform/api/introduction';
 export const LUXOR_STRATUM_DOCS = 'https://docs.luxor.tech/platform/mining/getting-started';
@@ -167,14 +166,13 @@ export interface LuxorPoolStats extends PoolStats {
 
 /**
  * Pool Luxor. Só consulta dados depois que GET /workspace responde 200 com o esquema esperado.
- * Sem autenticação válida, ou sem mineradores ativos na conta, as métricas de pool continuam simuladas
- * e o motivo é publicado.
+ * Sem autenticação válida, a pool fica INDISPONÍVEL (sem saldo, sem hashrate): nada é simulado.
+ * Com autenticação e active_miners = 0, os dados da conta são reais, mas a pool aparece como NÃO CONECTADA.
  */
 export class LuxorPool implements PoolAdapter {
-  provenance: Provenance = 'simulado';
+  readonly provenance: Provenance = 'real';
   readonly client: LuxorClient;
   private cfg: AppConfig;
-  private sim: SimulatedPool;
   private now: () => number;
   private onValidation: (v: LuxorValidation) => void;
   validation: LuxorValidation;
@@ -184,7 +182,6 @@ export class LuxorPool implements PoolAdapter {
     this.client = client;
     this.cfg = cfg;
     this.now = opts.now ?? Date.now;
-    this.sim = new SimulatedPool(this.now);
     this.onValidation = opts.onValidation ?? (() => {});
     this.validation = opts.initial ?? {
       state: client.configured ? 'falhou' : 'nao_configurada',
@@ -274,16 +271,16 @@ export class LuxorPool implements PoolAdapter {
       subaccounts: summary.subaccounts.map((s) => s.name),
     };
     if (!(snap.activeMiners > 0)) {
-      return { ...(await this.fallback('Luxor autenticada, mas nenhum minerador ativo na conta (active_miners = 0)')), luxor: snap };
+      // Dados da conta são reais; o que falta é um worker conectado.
+      return { balance: snap.balance, provenance: 'real', source: 'luxor', luxor: snap, validation: this.validation,
+        fallbackReason: 'POOL NÃO CONECTADA: Luxor autenticada, mas nenhum minerador ativo na conta (active_miners = 0)' };
     }
-    this.provenance = 'real';
     return { balance: snap.balance, provenance: 'real', source: 'luxor', luxor: snap, validation: this.validation };
   }
 
+  /** Sem dados verificados: nenhum saldo, hashrate ou pagamento é devolvido. */
   private async fallback(reason: string): Promise<LuxorPoolStats> {
-    this.provenance = 'simulado';
-    const s = await this.sim.stats();
-    return { ...s, provenance: 'simulado', source: 'simulador (fallback Luxor)', fallbackReason: reason, validation: this.validation };
+    return { provenance: 'real', source: 'luxor', fallbackReason: `INDISPONÍVEL: ${reason}`, validation: this.validation };
   }
 }
 

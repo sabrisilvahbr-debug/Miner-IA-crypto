@@ -1,4 +1,5 @@
 // Serviços compartilhados entregues aos agentes, com acesso limitado pelas permissões declaradas.
+import type { GpuMonitor } from '../gpu/monitor.ts';
 import type { Store } from './store.ts';
 import type { EventBus } from './eventBus.ts';
 import type { RiskGuardian } from './riskGuardian.ts';
@@ -40,10 +41,12 @@ export interface Services {
   wallet: WalletAdapter;
   llm: LlmGateway;
   runtime: RuntimeView;
+  gpu: GpuMonitor; // leitura do nvidia-smi (somente leitura)
 }
 
 const GATES: Partial<Record<keyof Services, Permission>> = {
   miner: 'read:miner',
+  gpu: 'read:miner',
   market: 'read:market',
   network: 'read:market',
   pool: 'read:pool',
