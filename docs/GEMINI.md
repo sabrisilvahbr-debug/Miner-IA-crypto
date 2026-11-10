@@ -81,6 +81,7 @@ No modo `auto`, se o Google recusar o **formato** do pedido na primeira (ou o en
 |---|---|---|
 | o Google recusou a chave (HTTP 401 ou 400) | Chave apagada, copiada pela metade, recém-criada ou de formato que o Google deixou de aceitar | Crie uma chave nova no AI Studio e rode o `Configurar-Gemini.bat` |
 | sem permissão (HTTP 403) | Chave bloqueada ou marcada como vazada, projeto restrito, nível gratuito indisponível para o projeto | Veja o estado do projeto no AI Studio; uma chave nova em um projeto novo costuma resolver |
+| o Google aceitou a chave, mas o projeto não tem o nível gratuito (HTTP 403) | O Google não oferece o nível gratuito para aquele projeto ou para o local de onde veio a chamada | Teste a partir do seu computador; se continuar, crie a chave em um projeto novo ou ative o faturamento no AI Studio |
 | créditos pré-pagos esgotados (HTTP 402) | O projeto usa créditos pré-pagos e eles acabaram | Recarregue ou use uma chave de um projeto no nível gratuito |
 | o modelo não existe | `GEMINI_MODEL` com código errado ou modelo desativado pelo Google | `npm run gemini:check` lista os modelos que a chave enxerga |
 | o modelo não está no nível gratuito (limite 0) | Modelo só do nível pago | Escolha um Flash ou Flash-Lite em `GEMINI_MODEL` |
@@ -100,5 +101,5 @@ Quando a chave, a permissão, o pagamento ou o modelo falham, o Gateway de LLM (
 ## O que não foi validado
 
 - O gateway foi exercitado contra o servidor real do Google **só até a recusa de chaves falsas**: os formatos de erro usados nos testes são os que o Google devolveu em 10/11/2026 para chaves `AQ.…`, `AIza…` e de formato desconhecido.
-- **Nenhuma geração com chave válida foi executada no desenvolvimento.** O formato do pedido e da resposta segue a documentação do Google. A confirmação é o `npm run gemini:check` no seu computador, com a sua chave.
+- Com uma chave válida do operador, o Google **autenticou a chave** (formato `AQ.…`, listagem de modelos e apelido `gemini-flash-lite-latest` confirmados), mas recusou a geração com "nível gratuito indisponível para este projeto" quando chamado do ambiente de desenvolvimento. **Nenhuma geração foi concluída**: o formato da resposta segue a documentação do Google. A confirmação é o `npm run gemini:check` no seu computador.
 - A integração com a Anthropic continua como estava e também não foi validada com uma chave real.

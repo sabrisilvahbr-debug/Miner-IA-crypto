@@ -275,6 +275,9 @@ test('erros: cota, modelo fora do nível gratuito, modelo inexistente, permissã
   assert.equal(leaked.e.kind, 'permissao');
   assert.match(leaked.e.message, /vazada/);
   assert.match((await run(403, { error: { code: 'permission_denied', message: 'Your project has been denied access.' } })).e.message, /projeto restrito/);
+  const noFree = await run(403, [{ error: { code: 403, message: 'The Gemini API free tier is not available for this project. To use the Gemini API, please set up billing to upgrade to the paid tier at https://aistudio.google.com/billing.', status: 'PERMISSION_DENIED' } }]);
+  assert.equal(noFree.e.kind, 'permissao');
+  assert.match(noFree.e.message, /aceitou a chave, mas o projeto dela não tem o nível gratuito/);
   assert.equal((await run(402, { error: { code: 'payment_required', message: 'Prepay credit balance is depleted.' } })).e.kind, 'pagamento');
   const region = await run(400, { error: { code: 400, message: 'User location is not supported for the API use.', status: 'FAILED_PRECONDITION' } });
   assert.deepEqual([region.e.kind, region.e.shape], ['permissao', false]);

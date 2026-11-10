@@ -112,6 +112,10 @@ export function geminiErrorFrom(status: number, body: unknown, ctx: { api: Gemin
     return new GeminiError('permissao', `o Google não atende este projeto ou esta região nas condições atuais (HTTP ${status})${tail}`, http);
   }
   if (status === 403 || /PERMISSION_DENIED/.test(tag)) {
+    // Observado em nov/2026 com uma chave válida: a chave é aceita (lista modelos), mas o projeto não tem nível gratuito.
+    if (/free tier is not available/i.test(rawMsg)) {
+      return new GeminiError('permissao', `o Google aceitou a chave, mas o projeto dela não tem o nível gratuito (HTTP ${status}): teste a partir do seu computador, crie a chave em um projeto novo ou ative o faturamento em https://aistudio.google.com/billing${tail}`, http);
+    }
     const leaked = /leak|reported|blocked|expos/i.test(rawMsg);
     return new GeminiError('permissao', leaked
       ? `o Google bloqueou esta chave (marcada como vazada): crie outra no Google AI Studio (HTTP ${status})${tail}`
