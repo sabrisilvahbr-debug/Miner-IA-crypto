@@ -74,7 +74,7 @@ Dependência é de **dados**, não de ordem de execução: se a origem falha, o 
 - Banco SQLite local com retenção de 30 dias (configurável) e backup a cada 6 h (7 cópias).
 - Chamadas externas limitadas a 30/min por host (configurável), com cache compartilhado para o minerador.
 - A **mineração em si não roda neste aplicativo**: ela roda no minerador (ASIC com cgminer/bmminer, ou XMRig em CPU/GPU). O aplicativo apenas lê, avalia e, com aprovação, pausa/retoma o XMRig.
-- LLM: desligado por padrão; quando ligado, um único gateway com teto de chamadas/dia e tokens/mês.
+- LLM: desligado por padrão; quando ligado, um único gateway (Gemini ou Claude) com teto de chamadas/dia e tokens/mês. Hoje só o Redator (A34) o chama, a cada 6 h.
 
 ## 6. Modelo de dados
 
@@ -149,3 +149,24 @@ O nível do agente é o pior entre as verificações: `ok`, `indeterminado`, `at
 `web/js/office3d.js` desenha o prédio em WebGL com three.js (cópia local em `web/vendor/`, sem CDN e sem etapa de build): 10 salas, 50 agentes em voxel com anel de estado, paredes que baixam no lado da câmera, etiquetas e arcos de dependência. Arrastar move, rolar ou pinçar aproxima, botão direito, Shift + arrastar ou girar dois dedos orbita. Para manter o desempenho no iPhone, a cena estática é uma única geometria por grupo, a resolução é limitada a 2× e o quadro só é redesenhado quando algo muda (ou a ~15 fps para a animação ociosa).
 
 Sem WebGL, ou com `?vista=iso` no endereço, a interface usa o escritório isométrico em Canvas 2D (`web/js/office.js`), com os mesmos filtros e painéis.
+
+## 11. Gateway de LLM
+
+`server/src/core/llmGateway.ts` é o único ponto de acesso a modelo de linguagem. Os agentes chamam `complete()` e recebem texto ou um motivo de falha; nenhum agente conhece o provedor, a chave ou o endereço.
+
+```
+A34 Redator ──► LlmGateway.complete() ──► limites (dia / mês) ──► provedor escolhido
+                                                                  ├─ Gemini  (core/gemini.ts)  x-goog-api-key
+                                                                  └─ Claude  (anthropicTransport) x-api-key
+                 ◄── texto validado (validateAnalysis) ou texto determinístico
+```
+
+- **Escolha do provedor** (`resolveLlmProvider`): `LLM_PROVIDER=auto` usa o provedor da chave presente. Com as duas chaves, mantém a Anthropic e avisa. Chave do Google em `ANTHROPIC_API_KEY` é usada no Gemini, com aviso.
+- **Chaves do Google** (`core/llmKeys.ts`): aceitas em qualquer formato (`AQ.…`, `AIza…` ou outro). Só enganos evidentes de preenchimento são recusados. A validade é decidida pelo Google em uma chamada real (`npm run gemini:check`, botão "Testar chave do LLM").
+- **Gemini** (`core/gemini.ts`): fala a Interactions API e, como reserva, a generateContent. No modo `auto`, troca de API só quando o Google recusa o formato do pedido. Uma nova tentativa em falha passageira (5xx ou queda de conexão); nenhuma em erro de chave, cota ou modelo.
+- **Limites**: chamadas por dia e tokens por mês, contando falhas e tokens de raciocínio.
+- **Validação da saída**: `validateAnalysis` exige JSON com os campos esperados, recusa promessas de retorno e qualquer número que não esteja nos dados enviados.
+- **Segredo**: a chave não entra em logs, eventos, alertas, métricas, respostas da API nem no navegador; mensagens de erro vindas de fora passam por `scrubKeys`.
+- **Observação**: o Gateway de LLM (A33) publica provedor e consumo, e abre alerta quando a chave, a permissão, o pagamento ou o modelo falham.
+
+Passo a passo para o operador: [`GEMINI.md`](GEMINI.md).

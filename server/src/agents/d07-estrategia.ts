@@ -114,28 +114,41 @@ export const estrategia: AgentDefinition[] = [
     code: 'A33-GATEWAY-LLM',
     name: 'Gateway de LLM',
     department: 7,
-    responsibility: 'Único ponto de acesso a modelo de linguagem: controla limites diários e mensais e publica disponibilidade e consumo.',
+    responsibility: 'Único ponto de acesso a modelo de linguagem (Gemini ou Claude): controla limites diários e mensais e publica provedor, disponibilidade, consumo e falhas de chave.',
     mode: 'scheduled',
     intervalMs: 10 * MIN,
     permissions: ['call:llm', 'write:metrics', 'emit:alert'],
-    inputs: ['LLM_ENABLED', 'ANTHROPIC_API_KEY', 'limites de uso'],
-    outputs: ['llm.enabled', 'llm.calls_today', 'llm.tokens_month'],
+    inputs: ['LLM_ENABLED', 'LLM_PROVIDER', 'GEMINI_API_KEY ou ANTHROPIC_API_KEY', 'limites de uso'],
+    outputs: ['llm.enabled', 'llm.provider', 'llm.calls_today', 'llm.tokens_month'],
     maturity: 'validado',
     async run(ctx) {
       const s = ctx.services.llm.status();
       if (ctx.config.llmEnabled && s.tokensThisMonth > s.maxTokensPerMonth * 0.8) ctx.raiseAlert('llm.budget', 'warn', `Consumo de tokens em ${Math.round((s.tokensThisMonth / s.maxTokensPerMonth) * 100)}% do limite mensal`);
+      // Chave, permissão, pagamento e modelo não se resolvem sozinhos: o operador precisa saber.
+      if (ctx.config.llmEnabled && s.last && !s.last.ok && ['chave', 'permissao', 'pagamento', 'modelo'].includes(s.last.kind ?? '')) {
+        ctx.raiseAlert(`llm.${s.last.kind}`, 'warn', `LLM (${s.provider ?? 'sem provedor'}): ${s.last.reason}`);
+      }
+      const who = s.provider ? `${s.provider} · ${s.model}` : 'sem provedor';
       return {
         status: s.enabled ? 'ok' : 'skipped',
-        summary: s.enabled ? `Disponível · ${s.callsToday}/${s.maxCallsPerDay} chamadas hoje · ${s.tokensThisMonth} tokens no mês` : `Indisponível: ${s.reason}`,
-        metrics: [metric('llm.enabled', s.enabled, 'real', 'gateway'), metric('llm.calls_today', s.callsToday, 'real', 'gateway'), metric('llm.tokens_month', s.tokensThisMonth, 'real', 'gateway')],
+        summary: s.enabled
+          ? `Disponível (${who}) · ${s.callsToday}/${s.maxCallsPerDay} chamadas hoje · ${s.tokensThisMonth} tokens no mês${s.last && !s.last.ok ? ' · última chamada falhou' : ''}`
+          : `Indisponível: ${s.reason}`,
+        metrics: [
+          metric('llm.enabled', s.enabled, 'real', 'gateway'),
+          metric('llm.provider', s.provider ?? 'nenhum', 'real', 'gateway'),
+          metric('llm.calls_today', s.callsToday, 'real', 'gateway'),
+          metric('llm.tokens_month', s.tokensThisMonth, 'real', 'gateway'),
+        ],
       };
     },
     async health(ctx) {
-      // Desligado por configuração é uma situação saudável; ligado e sem chave ou acima do teto não é.
+      // Desligado por configuração é uma situação saudável; ligado e sem chave, acima do teto ou com a chave recusada não é.
       const s = ctx.services.llm.status();
       if (!ctx.config.llmEnabled) return { ok: true, detail: 'LLM desligado por configuração (LLM_ENABLED=false)' };
       if (!s.enabled) return { ok: false, detail: `LLM ligado, mas indisponível: ${s.reason}` };
-      return { ok: true, detail: `${s.callsToday}/${s.maxCallsPerDay} chamadas hoje · ${s.tokensThisMonth}/${s.maxTokensPerMonth} tokens no mês` };
+      if (s.last && !s.last.ok) return { ok: false, detail: `última chamada ao ${s.provider} falhou: ${s.last.reason}` };
+      return { ok: true, detail: `${s.provider} · ${s.model} · ${s.callsToday}/${s.maxCallsPerDay} chamadas hoje · ${s.tokensThisMonth}/${s.maxTokensPerMonth} tokens no mês` };
     },
   },
   {
