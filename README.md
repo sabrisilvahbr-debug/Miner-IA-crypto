@@ -71,7 +71,8 @@ A Coinbase é corretora e carteira, **não é uma pool de mineração**. O camin
 - **Estado da mineração** com máquina de estados explícita (DESATIVADA, PRONTA PARA TESTE, TESTE AUTORIZADO, INICIANDO, MINERANDO, ERRO, PARADA, DADOS INDISPONÍVEIS) e oito indicadores independentes. MINERANDO exige processo ativo e hashrate medido pelo próprio minerador.
 - **Auditoria** com trilha encadeada por SHA-256.
 - **LLM opcional** (Claude API) por um único gateway, com limites e validação da saída. Desligado por padrão: o plano **Claude Pro não inclui chave de API**; ela é contratada à parte no Console da Anthropic e cobrada por uso.
-- **Escritório 3D** sem dependências: 10 salas, 50 agentes com anel de estado, filtros por estado e setor, ficha individual, console de eventos (copiar/baixar JSON), alertas, ações para aprovar, métricas, relatórios e controles do Guardião.
+- **Saúde e dependências**: cada agente tem verificação de saúde por regras fixas (execução, batimento, falhas, fonte, dependências) e declara de quais agentes consome dados; o mapa é validado contra ciclos e aparece na ficha do agente e como arcos no escritório.
+- **Escritório 3D** em WebGL (three.js em `web/vendor/`, nada para instalar): câmera orbital, 10 salas, 50 agentes com anel de estado, filtros por estado e setor, ficha individual, console de eventos (copiar/baixar JSON), alertas, ações para aprovar, métricas, relatórios e controles do Guardião.
 
 Arquitetura, mapa de dependências, modos de execução, recursos e modelo de dados: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
 
@@ -85,4 +86,5 @@ Arquitetura, mapa de dependências, modos de execução, recursos e modelo de da
 - Troca de pool, reinício e ajuste de threads são propostos, mas precisam ser feitos manualmente no equipamento; só pausar/retomar o XMRig é executado pelo sistema.
 - Rentabilidade só é estimada para SHA-256 (Bitcoin), antes das taxas da pool.
 - O CSV de recebimentos é apoio, não substitui um contador.
-- O escritório 3D usa renderização isométrica em Canvas (estilo voxel), não WebGL.
+- O escritório 3D em WebGL foi verificado no Chrome (computador e tela de celular emulada), não em um iPhone físico. Sem WebGL, a interface cai para a vista isométrica em Canvas (`?vista=iso` força essa vista).
+- A verificação de saúde usa só o que o runtime observa (execuções, falhas, estado e dependências); ela não testa o equipamento nem as contas externas.

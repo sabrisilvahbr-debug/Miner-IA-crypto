@@ -1,4 +1,4 @@
-// Gera docs/AUDITORIA-AGENTES.md a partir das definições reais dos 50 agentes: npm run audit:agents
+// Gera docs/AUDITORIA-AGENTES.md e docs/AGENTES.md a partir das definições reais dos 50 agentes: npm run audit:agents
 // A classificação vem do campo "maturity" e das dependências de cada agente. A última execução e o
 // resultado de cada agente só existem em tempo de execução: consulte GET /api/agents/:id no painel.
 import { writeFileSync } from 'node:fs';
@@ -64,3 +64,27 @@ for (const d of DEPARTMENTS) {
 const out = process.argv[2] ?? 'docs/AUDITORIA-AGENTES.md';
 writeFileSync(out, lines.join('\n'));
 console.log(`${ALL_AGENTS.length} agentes auditados → ${out}`);
+
+// ---------------- catálogo (docs/AGENTES.md): contrato, execução e dependências de cada agente ----------------
+const fmtMs = (ms: number) => (ms >= 3_600_000 ? `${ms / 3_600_000} h` : ms >= 60_000 ? `${ms / 60_000} min` : `${ms / 1000}s`);
+const MODE: Record<string, string> = { continuous: 'Contínuo', scheduled: 'Agendado', event: 'Por evento' };
+const code = (id: number) => ALL_AGENTS.find((a) => a.id === id)?.code.split('-')[0] ?? String(id);
+const cat: string[] = [];
+cat.push('# Os 50 agentes', '');
+cat.push('Gerado por `npm run audit:agents` a partir de `server/src/agents/`. Não edite à mão.', '');
+cat.push('Cada agente é um módulo com contrato padronizado (`AgentDefinition` em `server/src/core/types.ts`). **Depende de** lista os agentes cujos dados ele consome (`server/src/agents/dependencies.ts`); o mapa completo fica em `GET /api/dependencies`.', '');
+cat.push('Maturidade: **validado** = lógica determinística coberta por testes; **simulado** = testado com dados de teste, ainda sem validação com equipamento ou conta real; **stub** = esboço que depende de integração externa não testada.', '');
+for (const d of DEPARTMENTS) {
+  cat.push(`## ${d.id}. ${d.name} (agentes ${d.id * 5 - 4}–${d.id * 5})`, '');
+  cat.push('| # | Agente | Responsabilidade | Execução | Entradas → Saídas | Depende de | Permissões | Maturidade |', '|---|---|---|---|---|---|---|---|');
+  for (const a of ALL_AGENTS.filter((x) => x.department === d.id)) {
+    const exec = `${MODE[a.mode]}${a.intervalMs ? ` (${fmtMs(a.intervalMs)})` : ''}${a.triggers?.length ? `<br>gatilhos: ${a.triggers.map((t) => `\`${t}\``).join(', ')}` : ''}${a.essential ? '<br>**essencial**' : ''}`;
+    const deps = a.dependsOn?.length ? a.dependsOn.map(code).join(', ') : '—';
+    cat.push(`| ${a.id} | **${esc(a.name)}**<br>\`${a.code}\` | ${esc(a.responsibility)} | ${exec} | ${esc(a.inputs.join(', '))} → ${a.outputs.map((o) => `\`${esc(o)}\``).join(', ')} | ${deps} | ${a.permissions.map((p) => `\`${p}\``).join(' ')} | ${a.maturity} |`);
+  }
+  cat.push('');
+}
+if (!process.argv[2]) {
+  writeFileSync('docs/AGENTES.md', cat.join('\n'));
+  console.log(`catálogo → docs/AGENTES.md`);
+}

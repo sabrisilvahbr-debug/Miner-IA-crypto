@@ -261,6 +261,7 @@ async function panelAgent(id) {
       </dl>
       <div class="btn-row"><button class="btn" data-run="${a.id}">Executar agora</button></div>
     </div>
+    ${healthSection(a)}
     <div class="section"><h4>Contrato</h4><dl class="kv">
       <dt>Entradas</dt><dd>${a.inputs.map(esc).join(' · ')}</dd>
       <dt>Saídas</dt><dd>${a.outputs.map(esc).join(' · ')}</dd>
@@ -269,6 +270,25 @@ async function panelAgent(id) {
     <div class="section"><h4>Saídas atuais</h4>${outputs}</div>
     <div class="section"><h4>Execuções recentes</h4><div class="list">${execs}</div></div>
     <div class="section"><h4>Eventos do agente</h4><div class="list">${events}</div></div>`);
+}
+
+const HEALTH_LABEL = { ok: 'Saudável', atencao: 'Atenção', falha: 'Falha', indeterminado: 'Sem execução ainda' };
+const CHECK_LABEL = { execucao: 'Execução', batimento: 'Batimento', falhas: 'Falhas', fonte: 'Fonte externa', espera: 'Espera', dependencias: 'Dependências', proprio: 'Verificação própria' };
+
+function healthSection(a) {
+  const h = a.health;
+  if (!h) return '';
+  const link = (x) => `<button class="dep" data-agent="${x.id}"><i style="background:${STATE_COLORS[x.state]}"></i>${esc(x.code)} · ${esc(x.name)}</button>`;
+  const deps = a.dependencies?.length ? a.dependencies.map(link).join('') : '<span class="meta">Não consome dados de outro agente.</span>';
+  const dependents = a.dependents?.length ? a.dependents.map(link).join('') : '<span class="meta">Nenhum agente consome os dados deste.</span>';
+  return `
+    <div class="section"><h4>Saúde <span class="health ${esc(h.level)}">${esc(HEALTH_LABEL[h.level] ?? h.level)}</span></h4>
+      <div class="list">${h.checks.map((c) => `<div class="row"><div class="top"><span><i class="hdot ${esc(c.level)}"></i>${esc(CHECK_LABEL[c.name] ?? c.name)}</span></div><div class="meta">${esc(c.detail)}</div></div>`).join('')}</div>
+    </div>
+    <div class="section"><h4>Dependências</h4>
+      <p class="meta">Recebe dados de <span class="legend" style="background:#f2c14e"></span></p><div class="deps">${deps}</div>
+      <p class="meta">Fornece dados para <span class="legend" style="background:#6cb6ff"></span></p><div class="deps">${dependents}</div>
+    </div>`;
 }
 
 function agentRows(list) {
@@ -644,46 +664,46 @@ function askToken() {
 function setupCanvas() {
   const canvas = $('#office');
   const office = st.office;
-  const sc = office.scene;
   const pointers = new Map();
-  let start = null;
-  let pinch = null;
+  let drag = null; // um ponteiro: arrasta (ou gira, com botão direito / Shift)
+  let pinch = null; // dois dedos: aproxima e gira
   const tip = $('#tooltip');
 
   const pos = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  const zoomAt = (factor, x, y) => {
-    const ns = Math.max(6, Math.min(90, sc.scale * factor));
-    const f = ns / sc.scale;
-    sc.panX = x - sc.width / 2 - (x - sc.width / 2 - sc.panX) * f;
-    sc.panY = y - sc.height / 2 - (y - sc.height / 2 - sc.panY) * f;
-    sc.scale = ns;
-    office.dirty = true;
+  const two = () => {
+    const [a, b] = [...pointers.values()];
+    return { dist: Math.hypot(a[0] - b[0], a[1] - b[1]), angle: Math.atan2(b[1] - a[1], b[0] - a[0]), mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
   };
 
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, pos(e));
-    if (pointers.size === 1) start = { p: pos(e), pan: [sc.panX, sc.panY], moved: false };
-    if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      pinch = { dist: Math.hypot(a[0] - b[0], a[1] - b[1]), scale: sc.scale };
-      start = null;
-    }
+    if (pointers.size === 1) drag = { start: pos(e), last: pos(e), moved: false, orbit: e.button === 2 || e.shiftKey };
+    if (pointers.size === 2) { pinch = two(); drag = null; }
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = pos(e);
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
     if (pinch && pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      zoomAt((pinch.scale * (d / pinch.dist)) / sc.scale, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      const now = two();
+      if (pinch.dist > 0) office.zoomAt(now.dist / pinch.dist, now.mid[0], now.mid[1]);
+      let da = now.angle - pinch.angle;
+      if (da > Math.PI) da -= 2 * Math.PI;
+      if (da < -Math.PI) da += 2 * Math.PI;
+      office.orbitBy(-da, 0);
+      pinch = now;
       return;
     }
-    if (start && pointers.size === 1) {
-      const dx = p[0] - start.p[0];
-      const dy = p[1] - start.p[1];
-      if (Math.abs(dx) + Math.abs(dy) > 6) { start.moved = true; canvas.classList.add('dragging'); }
-      if (start.moved) { sc.panX = start.pan[0] + dx; sc.panY = start.pan[1] + dy; office.dirty = true; }
+    if (drag && pointers.size === 1) {
+      if (!drag.moved && Math.abs(p[0] - drag.start[0]) + Math.abs(p[1] - drag.start[1]) > 6) { drag.moved = true; canvas.classList.add('dragging'); tip.hidden = true; }
+      if (drag.moved) {
+        const dx = p[0] - drag.last[0];
+        const dy = p[1] - drag.last[1];
+        if (drag.orbit) office.orbitBy(-dx * 0.006, -dy * 0.004);
+        else office.panBy(dx, dy);
+      }
+      drag.last = p;
       return;
     }
     if (e.pointerType === 'mouse') {
@@ -707,22 +727,22 @@ function setupCanvas() {
   });
   const end = (e) => {
     const p = pos(e);
-    if (start && !start.moved && pointers.size === 1) {
+    if (drag && !drag.moved && pointers.size === 1 && e.type === 'pointerup') {
       const hit = office.pick(p[0], p[1]);
       if (hit?.type === 'agent') { openPanel('agent', hit.id); office.selected = hit.id; office.focusedDept = Math.ceil(hit.id / 5); office.dirty = true; renderDirectory(); }
       else if (hit?.type === 'room') { openPanel('dept', hit.id); office.focusDept(hit.id); renderDirectory(); }
     }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
-    if (!pointers.size) { start = null; canvas.classList.remove('dragging'); }
+    if (!pointers.size) { drag = null; canvas.classList.remove('dragging'); }
   };
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
   canvas.addEventListener('pointerleave', () => { tip.hidden = true; if (office.hovered) { office.hovered = null; office.dirty = true; } });
-  canvas.addEventListener('wheel', (e) => { e.preventDefault(); const [x, y] = pos(e); zoomAt(Math.exp(-e.deltaY * 0.0015), x, y); }, { passive: false });
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); const [x, y] = pos(e); office.zoomAt(Math.exp(-e.deltaY * 0.0015), x, y); }, { passive: false });
 
-  $('#vZoomIn').onclick = () => zoomAt(1.25, sc.width / 2, sc.height / 2);
-  $('#vZoomOut').onclick = () => zoomAt(0.8, sc.width / 2, sc.height / 2);
+  $('#vZoomIn').onclick = () => office.zoomAt(1.25);
+  $('#vZoomOut').onclick = () => office.zoomAt(0.8);
   $('#vRotL').onclick = () => office.rotate(-1);
   $('#vRotR').onclick = () => office.rotate(1);
   $('#vHome').onclick = () => { office.selected = null; office.overview(); renderDirectory(); };
@@ -733,7 +753,7 @@ function setupCanvas() {
     toast(`Etiquetas: ${{ auto: 'automáticas', all: 'todas', none: 'somente seleção' }[office.labelsMode]}`);
   };
 
-  const onResize = () => { sc.resize(); if (!office.focusedDept) office.overview(); office.dirty = true; };
+  const onResize = () => { office.resize(); if (!office.focusedDept) office.overview(); office.dirty = true; };
   new ResizeObserver(onResize).observe($('#stage'));
   onResize();
 }
@@ -839,6 +859,27 @@ function tokenFromHash() {
   return open;
 }
 
+/** Escritório em WebGL; sem WebGL (ou com ?vista=iso), o escritório isométrico em Canvas 2D. */
+async function createOffice() {
+  const canvas = $('#office');
+  if (new URLSearchParams(location.search).get('vista') !== 'iso') {
+    try {
+      const { Office3D } = await import('./office3d.js');
+      const office = new Office3D(canvas, st.departments);
+      document.body.dataset.vista = '3d';
+      return office;
+    } catch (e) {
+      console.warn('WebGL indisponível; usando a vista isométrica.', e);
+      // Um canvas que já tentou WebGL não aceita contexto 2D: troca por um novo.
+      const fresh = canvas.cloneNode(false);
+      canvas.replaceWith(fresh);
+      $('#officeLabels')?.remove();
+    }
+  }
+  document.body.dataset.vista = 'iso';
+  return new Office($('#office'), st.departments);
+}
+
 async function main() {
   const abrir = tokenFromHash();
   try {
@@ -848,7 +889,7 @@ async function main() {
     $('#sysState').textContent = `Servidor indisponível: ${e.message}`;
     return;
   }
-  st.office = new Office($('#office'), st.departments);
+  st.office = await createOffice();
   st.office.setAgents([...st.agents.values()]);
   wireUi();
   setupCanvas();
