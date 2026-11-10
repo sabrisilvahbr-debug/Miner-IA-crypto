@@ -44,6 +44,17 @@ export function roomOrigin(dept) {
   return { x: MARGIN + c * (ROOM_W + GAP_X), y: MARGIN + r * (ROOM_D + GAP_Y) };
 }
 
+export const LAYOUT = { ROOM_W, ROOM_D, GAP_X, GAP_Y, MARGIN, WORLD_W, WORLD_D };
+
+/** Centro do posto de trabalho do agente (5 por sala, em arco, de frente para as mesas). */
+export function agentSpot(id) {
+  const dept = Math.ceil(id / 5);
+  const k = (id - 1) % 5;
+  const { x, y } = roomOrigin(dept);
+  const lower = dept > 5; // sala de baixo tem porta ao norte; mesas ficam ao sul
+  return { x: x + 1.3 + k * 1.85 + 0.31, y: (lower ? y + ROOM_D - 3.75 - (k % 2) * 0.55 : y + 3.15 + (k % 2) * 0.55) + 0.25 };
+}
+
 /** Normal de um lado da sala, rotacionada para a vista. Lado frontal = normal com componente +x ou +y. */
 function sideIsFront(side, rotation) {
   const normals = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] };
@@ -176,17 +187,11 @@ export class Office {
 
     // agentes: 5 por sala em arco, de frente para as mesas
     this.agentBoxes.clear();
-    const roomRow = (dept) => Math.floor((dept - 1) / 5);
     for (let i = 1; i <= 50; i++) {
-      const dept = Math.ceil(i / 5);
-      const k = (i - 1) % 5;
-      const { x, y } = roomOrigin(dept);
-      const back = roomRow(dept) === 0 ? 0 : 1; // sala de baixo tem porta ao norte; mesas ficam ao sul
-      const ax = x + 1.3 + k * 1.85;
-      const ay = back === 0 ? y + 3.15 + (k % 2) * 0.55 : y + ROOM_D - 3.75 - (k % 2) * 0.55;
-      const box = { x: ax, y: ay, z: 0, w: 0.62, d: 0.5, h: 1.7, agentId: i, draw: (sc, v, t) => this.drawAgent(sc, v, t, i) };
+      const c = agentSpot(i);
+      const box = { x: c.x - 0.31, y: c.y - 0.25, z: 0, w: 0.62, d: 0.5, h: 1.7, agentId: i, draw: (sc, v, t) => this.drawAgent(sc, v, t, i) };
       items.push(box);
-      this.agentBoxes.set(i, { x: ax + 0.31, y: ay + 0.25 });
+      this.agentBoxes.set(i, c);
     }
 
     s.setScene(floors, items);
@@ -412,6 +417,22 @@ export class Office {
     this.scene.fit(m ? { top: 96, right: 6, bottom: 110, left: 6 } : { top: 150, right: 90, bottom: 80, left: 30 });
     // No celular o prédio é limitado pela largura: começa mais próximo e o operador arrasta para navegar.
     if (m) this.scene.scale *= 1.6;
+    this.dirty = true;
+  }
+
+  // Navegação: a mesma interface do escritório WebGL (office3d.js).
+  get width() { return this.scene.width; }
+  get height() { return this.scene.height; }
+  resize() { this.scene.resize(); }
+  orbitBy() {} // a vista isométrica só gira em passos de 90° (botões)
+  panBy(dx, dy) { this.scene.panX += dx; this.scene.panY += dy; this.dirty = true; }
+  zoomAt(factor, x = this.scene.width / 2, y = this.scene.height / 2) {
+    const sc = this.scene;
+    const ns = Math.max(6, Math.min(90, sc.scale * factor));
+    const f = ns / sc.scale;
+    sc.panX = x - sc.width / 2 - (x - sc.width / 2 - sc.panX) * f;
+    sc.panY = y - sc.height / 2 - (y - sc.height / 2 - sc.panY) * f;
+    sc.scale = ns;
     this.dirty = true;
   }
 

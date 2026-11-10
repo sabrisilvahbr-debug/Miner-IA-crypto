@@ -8,7 +8,7 @@ O repositório continha apenas um `README.md` vazio. Não havia código da vers�
 
 ```
                 ┌────────────────── Navegador (computador / iPhone) ──────────────────┐
-                │  Escritório 3D (Canvas isométrico) · painéis · console · filtros       │
+                │  Escritório 3D (WebGL / three.js) · painéis · console · filtros        │
                 └───────────────▲──────────────────────────────┬───────────────────────┘
                      SSE /api/stream                      REST /api/*
                 ┌───────────────┴──────────────────────────────▼───────────────────────┐
@@ -54,6 +54,10 @@ agent.error ──► A38 Recuperação (espera progressiva)
 Tudo ──► A01 Diretor · A49 Relatórios · A46 Console · A50 Interface
 ```
 
+O mapa acima é o desenho; a fonte de verdade é o código. Cada agente declara `dependsOn` (tabela única em `server/src/agents/dependencies.ts`), o Registro Central (A03) rejeita referência inexistente, autodependência e ciclo, e `GET /api/dependencies` devolve nós, arestas, ordem topológica e problemas. No escritório 3D, selecionar um agente desenha os arcos: amarelo para de quem ele recebe dados, azul para quem recebe dados dele.
+
+Dependência é de **dados**, não de ordem de execução: se a origem falha, o dependente continua rodando e a sua saúde passa a "atenção".
+
 ## 4. Contínuos, agendados e por evento
 
 | Modo | Agentes |
@@ -94,14 +98,31 @@ interface AgentDefinition {
   id; code; name; department; responsibility;
   mode: 'continuous' | 'scheduled' | 'event'; intervalMs?; triggers?;
   permissions: Permission[]; inputs: string[]; outputs: string[];
-  essential?; maturity: 'stub' | 'simulado' | 'validado'; timeoutMs?;
+  essential?; maturity: 'stub' | 'simulado' | 'validado'; timeoutMs?; dependsOn?: number[];
   run(ctx): Promise<{ status: 'ok' | 'skipped' | 'disconnected' | 'blocked'; summary; metrics?; events? }>;
+  health?(ctx): Promise<{ ok; detail }>;
 }
 ```
 
 O runtime **impõe** as permissões: acessar o minerador exige `read:miner`, escrever métricas exige `write:metrics`, propor ações exige `propose:action`, e assim por diante. Uma métrica sem procedência é rejeitada.
 
 Estados: `operacional` (executando ou último ciclo com sucesso), `ocioso` (nada a fazer / dado indisponível), `aguardando` (na fila ou contido pelo limitador), `erro` (falhou após as tentativas), `bloqueado` (sistema pausado ou em espera após falhas), `desconectado` (fonte externa não responde).
+
+### Verificação de saúde
+
+O runtime aplica as mesmas regras fixas aos 50 agentes (`Runtime.healthOf`), sem consultar nada externo:
+
+| Verificação | Regra |
+|---|---|
+| Execução | agendado ou contínuo que ainda não rodou = indeterminado; por evento sem evento = ok |
+| Batimento | sem execução há mais de 3 intervalos + 1 min = falha; sistema pausado = atenção |
+| Falhas | 1–2 falhas seguidas = atenção; 3 ou mais, ou estado `erro` = falha |
+| Fonte externa | estado `desconectado` = atenção (fonte não configurada ou sem resposta) |
+| Espera | em período de espera após falhas = atenção |
+| Dependências | alguma origem em `erro` ou `desconectado` = atenção |
+| Própria | `health()` do agente, quando existe (Guardião: regras carregadas; Gateway de LLM: chave e tetos) |
+
+O nível do agente é o pior entre as verificações: `ok`, `indeterminado`, `atencao` ou `falha`. Consultas: `GET /api/agents-health` (coletivo), `GET /api/agents/:id` (individual, com a verificação própria) e a seção Saúde da ficha do agente. O Supervisor de Saúde (A04) publica `health.ok_agents`, `health.attention_agents` e `health.failed_agents`.
 
 ## 8. Guardião de Risco (sem LLM)
 
@@ -122,3 +143,9 @@ Estados: `operacional` (executando ou último ciclo com sucesso), `ocioso` (nada
 `0 Desconectado → 1 Conectado ao minerador → 2 Hashrate informado pelo minerador → 3 Shares aceitas → 4 Saldo na pool → 5 Pagamento confirmado on-chain`
 
 "Mineração ativa" só é declarada a partir do nível 3 **com dados reais e recentes** (≤ 5 min). Com qualquer dado simulado no caminho, a interface mostra "SIMULAÇÃO — nenhum minerador real está sendo medido".
+
+## 10. Escritório 3D
+
+`web/js/office3d.js` desenha o prédio em WebGL com three.js (cópia local em `web/vendor/`, sem CDN e sem etapa de build): 10 salas, 50 agentes em voxel com anel de estado, paredes que baixam no lado da câmera, etiquetas e arcos de dependência. Arrastar move, rolar ou pinçar aproxima, botão direito, Shift + arrastar ou girar dois dedos orbita. Para manter o desempenho no iPhone, a cena estática é uma única geometria por grupo, a resolução é limitada a 2× e o quadro só é redesenhado quando algo muda (ou a ~15 fps para a animação ociosa).
+
+Sem WebGL, ou com `?vista=iso` no endereço, a interface usa o escritório isométrico em Canvas 2D (`web/js/office.js`), com os mesmos filtros e painéis.

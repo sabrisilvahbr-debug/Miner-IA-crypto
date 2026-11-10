@@ -73,6 +73,20 @@ code { font-family: var(--mono); font-size: 12px; background: #241b15; padding: 
 .stage { position: relative; background: radial-gradient(ellipse at 50% 40%, #241812 0%, var(--stage) 55%, #120c09 100%); overflow: hidden; min-height: 0; }
 #office { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 #office.dragging { cursor: grabbing; }
+#officeLabels { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* saúde e dependências na ficha do agente */
+.health { margin-left: 8px; padding: 2px 8px; border-radius: 10px; font: 600 10px var(--mono); letter-spacing: 0.06em; border: 1px solid currentColor; }
+.health.ok, .hdot.ok { color: var(--ok); }
+.health.atencao, .hdot.atencao { color: var(--wait); }
+.health.falha, .hdot.falha { color: var(--err); }
+.health.indeterminado, .hdot.indeterminado { color: var(--muted); }
+.hdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 7px; }
+.deps { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.dep { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 14px; background: #241b15; border: 1px solid var(--line); font-size: 12px; text-align: left; }
+.dep:hover { border-color: var(--gold); }
+.dep i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.legend { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-left: 4px; }
 
 .hud-top { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(940px, calc(100% - 520px)); }
 .hud-title { display: flex; align-items: center; gap: 14px; width: 100%; justify-content: center; }
@@ -239,7 +253,7 @@ dialog menu { padding: 0; margin: 14px 0 0; display: flex; justify-content: flex
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
-.console { background: #0d0c0a; border: 1px solid #3a332a; border-radius: 6px; padding: 8px; font: 11px/1.45 var(--mono); color: #d8cfbf; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 6px 0; }
+pre.console { background: #0d0c0a; border: 1px solid #3a332a; border-radius: 6px; padding: 8px; font: 11px/1.45 var(--mono); color: #d8cfbf; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 6px 0; }
 .qr-box { text-align: center; }
 .qr-box .qr { width: min(280px, 100%); margin: 6px auto 14px; background: #fff; padding: 6px; border-radius: 8px; }
 .qr-box .qr img { display: block; width: 100%; height: auto; image-rendering: pixelated; }

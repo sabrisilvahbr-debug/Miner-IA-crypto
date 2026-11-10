@@ -6,10 +6,13 @@ import type {
   ActionProposal,
   AgentContext,
   AgentDefinition,
+  AgentHealth,
   AgentResult,
   AgentRuntimeInfo,
   AgentState,
   DomainEvent,
+  HealthCheck,
+  HealthLevel,
   Metric,
   MetricsView,
   Severity,
@@ -89,7 +92,7 @@ export class Runtime implements RuntimeView {
       const info: AgentRuntimeInfo = {
         id: d.id, code: d.code, name: d.name, department: d.department, responsibility: d.responsibility, mode: d.mode,
         intervalMs: d.intervalMs, triggers: d.triggers, permissions: d.permissions, inputs: d.inputs, outputs: d.outputs,
-        essential: !!d.essential, maturity: d.maturity, state: 'ocioso', running: false,
+        essential: !!d.essential, maturity: d.maturity, dependsOn: [...(d.dependsOn ?? [])], state: 'ocioso', running: false,
         runs: prev?.runs ?? 0, failures: prev?.failures ?? 0, consecutiveFailures: 0, duplicatesSkipped: prev?.duplicatesSkipped ?? 0,
         lastRunAt: prev?.lastRunAt, lastSuccessAt: prev?.lastSuccessAt, lastError: prev?.lastError, lastErrorAt: prev?.lastErrorAt,
         lastSummary: prev?.lastSummary,
@@ -144,6 +147,98 @@ export class Runtime implements RuntimeView {
       byMaturity[a.maturity] = (byMaturity[a.maturity] ?? 0) + 1;
     }
     return { total: agents.length, byState, byDepartment, byMaturity, queue: this.queueStats() };
+  }
+
+  // ------------------------------------------------------------------ saúde
+  /**
+   * Verificação de saúde por regras fixas, igual para os 50 agentes: execução, batimento, falhas
+   * consecutivas, fonte externa, período de espera e dependências. Não consulta nada externo.
+   */
+  healthOf(id: number): AgentHealth | undefined {
+    const info = this.infos.get(id);
+    if (!info) return undefined;
+    const now = this.now();
+    const checks: HealthCheck[] = [];
+    const paused = this.guardian.pauseState().paused && !info.essential;
+
+    if (info.lastRunAt === undefined) {
+      checks.push(info.mode === 'event'
+        ? { name: 'execucao', level: 'ok', detail: 'acionado por evento; nenhum evento recebido ainda' }
+        : { name: 'execucao', level: 'indeterminado', detail: 'ainda não executou' });
+    } else {
+      checks.push({ name: 'execucao', level: 'ok', detail: `${info.runs} execução(ões)` });
+    }
+
+    // Sem agendador ativo não há batimento a cobrar (execuções manuais e testes).
+    if (info.mode !== 'event' && info.intervalMs && !this.stopped) {
+      const limit = info.intervalMs * 3 + 60_000;
+      const since = now - (info.lastRunAt ?? this.startedAt);
+      if (paused) checks.push({ name: 'batimento', level: 'atencao', detail: 'sistema pausado pelo Guardião de Risco' });
+      else if (since > limit) checks.push({ name: 'batimento', level: 'falha', detail: `sem execução há ${Math.round(since / 1000)} s (esperado a cada ${Math.round(info.intervalMs / 1000)} s)` });
+      else if (info.lastRunAt !== undefined) checks.push({ name: 'batimento', level: 'ok', detail: `última execução há ${Math.round(since / 1000)} s` });
+    }
+
+    if (info.state === 'erro' || info.consecutiveFailures >= 3) {
+      checks.push({ name: 'falhas', level: 'falha', detail: `${info.consecutiveFailures} falha(s) seguida(s): ${info.lastError ?? 'erro desconhecido'}` });
+    } else if (info.consecutiveFailures > 0) {
+      checks.push({ name: 'falhas', level: 'atencao', detail: `${info.consecutiveFailures} falha(s) seguida(s): ${info.lastError ?? 'erro desconhecido'}` });
+    } else {
+      checks.push({ name: 'falhas', level: 'ok', detail: 'sem falhas consecutivas' });
+    }
+
+    if (info.state === 'desconectado') {
+      checks.push({ name: 'fonte', level: 'atencao', detail: `fonte externa indisponível: ${info.lastSummary ?? 'sem resposta'}` });
+    }
+    if (info.cooldownUntil && info.cooldownUntil > now) {
+      checks.push({ name: 'espera', level: 'atencao', detail: `em espera após falhas por mais ${Math.ceil((info.cooldownUntil - now) / 1000)} s` });
+    }
+
+    if (info.dependsOn.length) {
+      const bad = info.dependsOn
+        .map((d) => this.infos.get(d))
+        .filter((d): d is AgentRuntimeInfo => !!d && (d.state === 'erro' || d.state === 'desconectado'));
+      checks.push(bad.length
+        ? { name: 'dependencias', level: 'atencao', detail: `origem indisponível: ${bad.map((d) => `${d.code} (${d.state})`).join(', ')}` }
+        : { name: 'dependencias', level: 'ok', detail: `${info.dependsOn.length} origem(ns) sem erro` });
+    }
+    return summarizeHealth(id, checks, now);
+  }
+
+  healthAll(): AgentHealth[] {
+    return [...this.infos.keys()].sort((a, b) => a - b).map((id) => this.healthOf(id)!);
+  }
+
+  /** Regras fixas mais a verificação própria do agente (`health()`), quando ele define uma. */
+  async checkHealth(id: number): Promise<AgentHealth | undefined> {
+    const base = this.healthOf(id);
+    const def = this.defs.get(id);
+    if (!base || !def?.health) return base;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 5000);
+    let own: HealthCheck;
+    try {
+      const h = await Promise.race([
+        def.health(this.buildContext(def, ac.signal)),
+        new Promise<never>((_r, reject) => ac.signal.addEventListener('abort', () => reject(new TimeoutError(5000)))),
+      ]);
+      own = { name: 'proprio', level: h.ok ? 'ok' : 'falha', detail: h.detail };
+    } catch (e) {
+      own = { name: 'proprio', level: 'falha', detail: `verificação própria falhou: ${(e as Error).message}` };
+    } finally {
+      clearTimeout(timer);
+    }
+    return summarizeHealth(id, [...base.checks, own], this.now());
+  }
+
+  /** Grafo de dependências para a API e a interface. */
+  dependencyGraph() {
+    const agents = this.agents();
+    const edges = agents.flatMap((a) => a.dependsOn.map((from) => ({ from, to: a.id })));
+    return {
+      nodes: agents.map((a) => ({ id: a.id, code: a.code, name: a.name, department: a.department, mode: a.mode, state: a.state })),
+      edges,
+      dependents: Object.fromEntries(agents.map((a) => [a.id, edges.filter((e) => e.from === a.id).map((e) => e.to)])),
+    };
   }
 
   // ------------------------------------------------------------------ ciclo de vida
@@ -474,6 +569,21 @@ export class Runtime implements RuntimeView {
     }
     return r;
   }
+}
+
+const HEALTH_ORDER: HealthLevel[] = ['ok', 'indeterminado', 'atencao', 'falha'];
+
+function summarizeHealth(agentId: number, checks: HealthCheck[], checkedAt: number): AgentHealth {
+  const level = checks.reduce<HealthLevel>((w, c) => (HEALTH_ORDER.indexOf(c.level) > HEALTH_ORDER.indexOf(w) ? c.level : w), 'ok');
+  const worst = checks.filter((c) => c.level === level);
+  return {
+    agentId,
+    level,
+    ok: level === 'ok',
+    detail: level === 'ok' ? 'todas as verificações passaram' : worst.map((c) => c.detail).join('; '),
+    checks,
+    checkedAt,
+  };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

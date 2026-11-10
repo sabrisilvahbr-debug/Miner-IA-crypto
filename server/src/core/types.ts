@@ -143,6 +143,23 @@ export interface Health {
   detail: string;
 }
 
+/** ok = saudável; atencao = funciona com ressalva; falha = não está cumprindo a função; indeterminado = ainda sem execução. */
+export type HealthLevel = 'ok' | 'atencao' | 'falha' | 'indeterminado';
+
+export interface HealthCheck {
+  name: 'execucao' | 'batimento' | 'falhas' | 'fonte' | 'espera' | 'dependencias' | 'proprio';
+  level: HealthLevel;
+  detail: string;
+}
+
+/** Resultado da verificação de saúde de um agente: regras fixas do runtime mais a verificação própria, se houver. */
+export interface AgentHealth extends Health {
+  agentId: number;
+  level: HealthLevel;
+  checks: HealthCheck[];
+  checkedAt: number;
+}
+
 export interface MetricsView {
   get(key: string): Metric | undefined;
   value(key: string): MetricValue | undefined;
@@ -185,6 +202,8 @@ export interface AgentDefinition {
   essential?: boolean;
   maturity: Maturity;
   timeoutMs?: number;
+  /** Agentes cujos dados este consome (preenchido a partir de agents/dependencies.ts). */
+  dependsOn?: number[];
   run(ctx: AgentContext): Promise<AgentResult>;
   health?(ctx: AgentContext): Promise<Health>;
 }
@@ -203,6 +222,7 @@ export interface AgentRuntimeInfo {
   outputs: string[];
   essential: boolean;
   maturity: Maturity;
+  dependsOn: number[];
   state: AgentState;
   running: boolean;
   lastRunAt?: number;

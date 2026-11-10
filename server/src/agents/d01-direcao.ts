@@ -2,6 +2,7 @@
 import type { AgentDefinition } from '../core/types.ts';
 import { computeEvidence } from '../core/evidence.ts';
 import { DEPARTMENTS, MIN, SEC, metric } from './common.ts';
+import { validateDependencies } from './dependencies.ts';
 
 export const direcao: AgentDefinition[] = [
   {
@@ -70,12 +71,12 @@ export const direcao: AgentDefinition[] = [
     code: 'A03-REGISTRO',
     name: 'Registro Central',
     department: 1,
-    responsibility: 'Valida a integridade do registro: 50 agentes, 5 por departamento, códigos únicos e contratos completos.',
+    responsibility: 'Valida a integridade do registro: 50 agentes, 5 por departamento, códigos únicos, contratos completos e mapa de dependências sem ciclos.',
     mode: 'scheduled',
     intervalMs: 5 * MIN,
     permissions: ['read:runtime', 'write:metrics', 'emit:alert'],
     inputs: ['definições dos agentes'],
-    outputs: ['registry.count', 'registry.valid'],
+    outputs: ['registry.count', 'registry.valid', 'registry.dependencies'],
     essential: true,
     maturity: 'validado',
     async run(ctx) {
@@ -90,11 +91,17 @@ export const direcao: AgentDefinition[] = [
         if (a.department !== Math.ceil(a.id / 5)) problems.push(`${a.code} no departamento errado`);
         if (!a.responsibility || !a.inputs.length || !a.outputs.length || !a.permissions.length) problems.push(`${a.code} com contrato incompleto`);
       }
+      problems.push(...validateDependencies(defs));
+      const edges = defs.reduce((n, a) => n + (a.dependsOn?.length ?? 0), 0);
       if (problems.length) ctx.raiseAlert('registry.invalid', 'error', `Registro inconsistente: ${problems.join('; ')}`);
       return {
         status: 'ok',
         summary: problems.length ? `Inconsistências: ${problems.length}` : `${defs.length} agentes íntegros em ${DEPARTMENTS.length} departamentos`,
-        metrics: [metric('registry.count', defs.length, 'real', 'runtime'), metric('registry.valid', problems.length === 0, 'real', 'runtime')],
+        metrics: [
+          metric('registry.count', defs.length, 'real', 'runtime'),
+          metric('registry.valid', problems.length === 0, 'real', 'runtime'),
+          metric('registry.dependencies', edges, 'real', 'runtime'),
+        ],
       };
     },
   },
@@ -103,12 +110,12 @@ export const direcao: AgentDefinition[] = [
     code: 'A04-SAUDE',
     name: 'Supervisor de Saúde',
     department: 1,
-    responsibility: 'Verifica batimentos: agentes contínuos e agendados sem sucesso recente e agentes com falhas consecutivas.',
+    responsibility: 'Verifica batimentos e consolida a verificação de saúde dos 50 agentes: sem sucesso recente, falhas consecutivas e níveis ok, atenção e falha.',
     mode: 'continuous',
     intervalMs: 30 * SEC,
     permissions: ['read:runtime', 'write:metrics', 'emit:alert'],
     inputs: ['estado dos agentes'],
-    outputs: ['health.stale_agents', 'health.failing_agents'],
+    outputs: ['health.stale_agents', 'health.failing_agents', 'health.ok_agents', 'health.attention_agents', 'health.failed_agents'],
     essential: true,
     maturity: 'validado',
     async run(ctx) {
@@ -124,10 +131,18 @@ export const direcao: AgentDefinition[] = [
       if (stale.length) ctx.raiseAlert('health.stale', 'warn', `Sem sucesso recente: ${stale.map((a) => a.code).join(', ')}`);
       const failing = rt.agents().filter((a) => a.consecutiveFailures >= 3);
       for (const a of failing) ctx.raiseAlert(`health.failing.${a.id}`, 'error', `${a.code} falhou ${a.consecutiveFailures} vezes seguidas: ${a.lastError}`);
+      const levels = { ok: 0, atencao: 0, falha: 0, indeterminado: 0 };
+      for (const h of rt.healthAll()) levels[h.level]++;
       return {
         status: 'ok',
-        summary: `${stale.length} sem sucesso recente · ${failing.length} com falhas consecutivas`,
-        metrics: [metric('health.stale_agents', stale.length, 'real', 'runtime'), metric('health.failing_agents', failing.length, 'real', 'runtime')],
+        summary: `Saúde: ${levels.ok} ok · ${levels.atencao} atenção · ${levels.falha} falha · ${levels.indeterminado} sem execução · ${stale.length} sem sucesso recente`,
+        metrics: [
+          metric('health.stale_agents', stale.length, 'real', 'runtime'),
+          metric('health.failing_agents', failing.length, 'real', 'runtime'),
+          metric('health.ok_agents', levels.ok, 'real', 'runtime'),
+          metric('health.attention_agents', levels.atencao, 'real', 'runtime'),
+          metric('health.failed_agents', levels.falha, 'real', 'runtime'),
+        ],
       };
     },
   },

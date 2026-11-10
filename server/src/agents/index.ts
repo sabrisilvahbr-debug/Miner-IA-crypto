@@ -11,9 +11,12 @@ import { automacao } from './d08-automacao.ts';
 import { auditoria } from './d09-auditoria.ts';
 import { comunicacao } from './d10-comunicacao.ts';
 
-export { DEPARTMENTS } from './common.ts';
+import { withDependencies } from './dependencies.ts';
 
-export const ALL_AGENTS: AgentDefinition[] = [
+export { DEPARTMENTS } from './common.ts';
+export { DEPENDS_ON, validateDependencies, topologicalOrder } from './dependencies.ts';
+
+export const ALL_AGENTS: AgentDefinition[] = withDependencies([
   ...direcao, ...mercado, ...mineracao, ...energia, ...pools,
   ...risco, ...estrategia, ...automacao, ...auditoria, ...comunicacao,
-];
+]);

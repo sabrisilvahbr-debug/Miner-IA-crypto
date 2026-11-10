@@ -39,6 +39,14 @@ export const risco: AgentDefinition[] = [
         ],
       };
     },
+    async health(ctx) {
+      // O Guardião só é saudável com o conjunto fixo de regras carregado (R01–R08, S01–S04, H01).
+      const rules = ctx.services.guardian.rules();
+      const missing = ['R01', 'R02', 'R03', 'R04', 'R07', 'S01', 'H01'].filter((id) => !rules.some((r) => r.id === id));
+      return missing.length
+        ? { ok: false, detail: `regras ausentes: ${missing.join(', ')}` }
+        : { ok: true, detail: `${rules.length} regras determinísticas carregadas` };
+    },
   },
   {
     id: 27,
