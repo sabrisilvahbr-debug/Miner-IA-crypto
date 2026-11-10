@@ -7,7 +7,7 @@ import type { RateLimiter, HttpClient } from './rateLimiter.ts';
 import type { LlmGateway } from './llmGateway.ts';
 import type { MinerService } from '../adapters/miner.ts';
 import type { MarketAdapter, NetworkAdapter, PoolAdapter, WalletAdapter } from '../adapters/external.ts';
-import type { AgentDefinition, AgentRuntimeInfo, Permission, TaskRecord } from './types.ts';
+import type { AgentDefinition, AgentHealth, AgentRuntimeInfo, Permission, TaskRecord } from './types.ts';
 
 export class PermissionError extends Error {
   constructor(agent: string, perm: Permission) {
@@ -26,6 +26,8 @@ export interface RuntimeView {
   failTask(id: string, reason: string): void;
   setCooldown(agentId: number, untilTs: number): void;
   clientCount(): number;
+  healthOf(id: number): AgentHealth | undefined;
+  healthAll(): AgentHealth[];
 }
 
 export interface Services {

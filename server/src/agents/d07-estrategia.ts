@@ -130,6 +130,13 @@ export const estrategia: AgentDefinition[] = [
         metrics: [metric('llm.enabled', s.enabled, 'real', 'gateway'), metric('llm.calls_today', s.callsToday, 'real', 'gateway'), metric('llm.tokens_month', s.tokensThisMonth, 'real', 'gateway')],
       };
     },
+    async health(ctx) {
+      // Desligado por configuração é uma situação saudável; ligado e sem chave ou acima do teto não é.
+      const s = ctx.services.llm.status();
+      if (!ctx.config.llmEnabled) return { ok: true, detail: 'LLM desligado por configuração (LLM_ENABLED=false)' };
+      if (!s.enabled) return { ok: false, detail: `LLM ligado, mas indisponível: ${s.reason}` };
+      return { ok: true, detail: `${s.callsToday}/${s.maxCallsPerDay} chamadas hoje · ${s.tokensThisMonth}/${s.maxTokensPerMonth} tokens no mês` };
+    },
   },
   {
     id: 34,

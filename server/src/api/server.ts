@@ -6,7 +6,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { App } from '../app.ts';
 import type { AgentState, DomainEvent, Severity } from '../core/types.ts';
 import { AGENT_STATES } from '../core/types.ts';
-import { DEPARTMENTS } from '../agents/index.ts';
+import { DEPARTMENTS, topologicalOrder, validateDependencies } from '../agents/index.ts';
 import { computeEvidence } from '../core/evidence.ts';
 import { verifyAuditChain, buildReceiptsCsv } from '../agents/d09-auditoria.ts';
 import { MAINTENANCE_TASKS } from '../agents/d08-automacao.ts';
@@ -99,14 +99,29 @@ export function createApiServer(app: App, webDir: string) {
     let list = runtime.agents();
     if (state && AGENT_STATES.includes(state)) list = list.filter((a) => a.state === state);
     if (dept) list = list.filter((a) => a.department === Number(dept));
-    json(res, 200, list);
+    json(res, 200, list.map((a) => ({ ...a, healthLevel: runtime.healthOf(a.id)?.level })));
   });
 
-  route('GET', '/api/agents/:id', (_q, res, p) => {
+  // Saúde coletiva (regras fixas do runtime) e mapa de dependências entre os agentes.
+  route('GET', '/api/agents-health', (_q, res) => {
+    const all = runtime.healthAll();
+    const byLevel = { ok: 0, atencao: 0, falha: 0, indeterminado: 0 };
+    for (const h of all) byLevel[h.level]++;
+    json(res, 200, { total: all.length, byLevel, agents: all });
+  });
+  route('GET', '/api/dependencies', (_q, res) => {
+    json(res, 200, { ...runtime.dependencyGraph(), problems: validateDependencies(runtime.definitions()), order: topologicalOrder(runtime.definitions()) });
+  });
+
+  route('GET', '/api/agents/:id', async (_q, res, p) => {
     const a = runtime.agent(Number(p.id));
     if (!a) return json(res, 404, { error: 'agente inexistente' });
+    const brief = (id: number) => { const x = runtime.agent(id); return x ? { id: x.id, code: x.code, name: x.name, state: x.state } : undefined; };
     json(res, 200, {
       ...a,
+      health: await runtime.checkHealth(a.id),
+      dependencies: a.dependsOn.map(brief).filter(Boolean),
+      dependents: runtime.agents().filter((x) => x.dependsOn.includes(a.id)).map((x) => brief(x.id)),
       executions: store.listExecutions(a.id, 15),
       tasks: store.listTasks({ agentId: a.id, limit: 10 }),
       events: store.listEvents({ agentId: a.id, limit: 20 }),
