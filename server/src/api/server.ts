@@ -148,6 +148,15 @@ export function createApiServer(app: App, webDir: string) {
     });
   });
 
+  // LLM: estado (provedor, modelo, limites) e teste da chave. A chave em si nunca aparece nas respostas.
+  route('GET', '/api/llm/status', (_q, res) => json(res, 200, { ...llm.status(), validation: store.getKV('llm.validation', null) }));
+  route('POST', '/api/llm/validate', async (_q, res) => {
+    const v = await llm.validate();
+    store.setKV('llm.validation', v, runtime.now());
+    app.bus.publish({ type: 'system.llm_validation', severity: v.ok ? 'info' : 'warn', message: `LLM (${v.provider ?? 'sem provedor'}): ${v.detail}`, data: { ok: v.ok, provider: v.provider, model: v.model } });
+    json(res, 200, { validation: v, status: llm.status() });
+  });
+
   route('GET', '/api/events', (_q, res, _p, url) => {
     const sev = url.searchParams.get('severity');
     json(res, 200, store.listEvents({

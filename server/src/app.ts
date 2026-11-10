@@ -75,7 +75,7 @@ export function createApp(config: AppConfig, opts: AppOptions = {}) {
       bus.publish({ type: 'mining.state', severity: t.to === 'ERRO' ? 'warn' : 'info', message: `Mineração: ${t.from} → ${t.to} (${t.origem}): ${t.motivo}`, data: { from: t.from, to: t.to, origem: t.origem } });
     },
   });
-  const llm = new LlmGateway(store, config, now, opts.llmTransport);
+  const llm = new LlmGateway(store, config, now, opts.llmTransport, opts.fetchImpl);
   const runtime = new Runtime({ config, store, bus, guardian, logger, now });
   runtime.services = {
     store, bus, guardian, limiter, http, miner: new MinerService(adapter, 5000, now), llm, runtime, gpu, ...ext, ...opts.overrides,

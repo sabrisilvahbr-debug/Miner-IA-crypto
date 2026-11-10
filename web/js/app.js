@@ -436,6 +436,23 @@ async function panelPool() {
     </div>`);
 }
 
+const LLM_NAME = { gemini: 'Gemini (Google)', anthropic: 'Claude (Anthropic)' };
+const KEY_KIND = { autorizacao: 'chave AQ.…', padrao: 'chave AIza… (formato antigo)', desconhecido: 'chave em formato não reconhecido' };
+
+/** Estado do LLM: provedor, modelo, uso, última falha e botão de teste. A chave nunca chega ao navegador. */
+function llmLine(llm) {
+  if (!llm) return '—';
+  const who = llm.provider ? `${esc(LLM_NAME[llm.provider] ?? llm.provider)} · <code>${esc(llm.model ?? '')}</code>${llm.keyKind ? ` · ${esc(KEY_KIND[llm.keyKind] ?? llm.keyKind)}` : ''}` : '';
+  const failing = llm.last && !llm.last.ok;
+  const head = llm.enabled
+    ? `<b style="color:var(--${failing ? 'err' : 'ok'})">${failing ? 'ligado, com falha' : 'ativo'}</b> · ${who} · ${llm.callsToday}/${llm.maxCallsPerDay} chamadas hoje`
+    : `${esc(llm.reason ?? 'indisponível')}${who ? `<br><span class="meta">${who}</span>` : ''}`;
+  const last = failing ? `<br><span style="color:var(--err)">Última chamada falhou: ${esc(llm.last.reason ?? '')}</span>` : '';
+  const notes = (llm.notes ?? []).map((n) => `<br><span class="meta">${esc(n)}</span>`).join('');
+  const btn = llm.enabled ? '<div class="btn-row"><button class="btn" data-llm="validate">Testar chave do LLM</button></div>' : '';
+  return `${head}${last}${notes}${btn}`;
+}
+
 async function panelRisk() {
   const [r, audit] = await Promise.all([api('/api/risk'), api('/api/audit/verify')]);
   const llm = st.summary?.llm;
@@ -447,7 +464,7 @@ async function panelRisk() {
       <dt>Temperatura</dt><dd>${r.snapshot.temperatureC ?? 'sem leitura'}${r.snapshot.temperatureC !== undefined ? ' °C' : ''}</dd>
       <dt>Ações na hora</dt><dd>${r.snapshot.actionsLastHour} · reinícios ${r.snapshot.restartsLastHour}</dd>
       <dt>Auditoria</dt><dd>${audit.ok ? `cadeia íntegra (${audit.records} registros)` : `<b style="color:var(--err)">corrompida no registro ${audit.brokenAt}</b>`}</dd>
-      <dt>LLM</dt><dd>${llm ? (llm.enabled ? `ativo · ${llm.callsToday}/${llm.maxCallsPerDay} chamadas hoje` : esc(llm.reason)) : '—'}</dd>
+      <dt>LLM</dt><dd>${llmLine(llm)}</dd>
     </dl>
     <div class="btn-row">${r.pause.paused ? '<button class="btn ok" data-system="resume">Retomar sistema</button>' : '<button class="btn danger" data-system="pause">Pausar sistema</button>'}</div></div>
     <div class="section"><h4>Regras determinísticas</h4><div class="list">${r.rules.map((x) => `<div class="row"><b>${esc(x.id)}</b> ${esc(x.description)}</div>`).join('')}</div></div>`);
@@ -635,6 +652,14 @@ async function handlePanelClick(e) {
   const d = t.dataset;
   try {
     if (d.agent) { const id = Number(d.agent); const r = openPanel('agent', id); st.office.focusAgent(id); return r; }
+    if (d.llm === 'validate') {
+      t.disabled = true;
+      toast('Testando a chave…');
+      const r = await api('/api/llm/validate', { method: 'POST', allowError: true });
+      toast(r.validation?.ok ? `Chave aceita: ${r.validation.detail}` : `Teste falhou: ${r.validation?.detail ?? r.error ?? 'sem resposta'}`);
+      await refreshSummary();
+      return renderPanel();
+    }
     if (d.run) { const r = await api(`/api/agents/${d.run}/run`, { method: 'POST', allowError: true }); toast(r.accepted ? 'Execução enfileirada' : r.reason ?? 'Não enfileirado'); setTimeout(renderPanel, 1200); return; }
     if (d.ack) { await api(`/api/alerts/${d.ack}/ack`, { method: 'POST' }); toast('Alerta reconhecido'); await refreshSummary(); return renderPanel(); }
     if (d.approve) { const r = await api(`/api/actions/${d.approve}/approve`, { method: 'POST', allowError: true }); toast(r.ok ? 'Ação aprovada; o Executor fará a reavaliação final' : `Bloqueada: ${r.reason}`); setTimeout(renderPanel, 800); return; }

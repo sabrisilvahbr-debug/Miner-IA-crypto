@@ -3,6 +3,7 @@ import type { AgentDefinition } from '../core/types.ts';
 import { computeEvidence } from '../core/evidence.ts';
 import { DEPARTMENTS, MIN, SEC, metric } from './common.ts';
 import { validateDependencies } from './dependencies.ts';
+import { resolveLlmProvider } from '../core/llmGateway.ts';
 
 export const direcao: AgentDefinition[] = [
   {
@@ -167,7 +168,11 @@ export const direcao: AgentDefinition[] = [
       if (c.poolSource === 'luxor' && !c.luxorApiKey) w.push('POOL_SOURCE=luxor sem LUXOR_API_KEY');
       if (c.poolSource === 'luxor' && !c.luxorSubaccount) w.push('LUXOR_SUBACCOUNT não definido: necessário para configurar o minerador');
       if (c.walletSource === 'mempool' && !c.walletBtcAddress) w.push('WALLET_BTC_ADDRESS ausente');
-      if (c.llmEnabled && !c.anthropicApiKey) w.push('LLM_ENABLED sem ANTHROPIC_API_KEY');
+      const llm = resolveLlmProvider(c);
+      if (c.llmEnabled && !llm.apiKey) w.push(`LLM_ENABLED sem chave utilizável: ${llm.reason}`);
+      if (c.llmEnabled || c.geminiKeyProblem) w.push(...llm.notes);
+      if (!c.llmEnabled && llm.apiKey) w.push('há chave de LLM configurada, mas LLM_ENABLED=false: o LLM continua desligado');
+      if (!c.llmEnabled && c.geminiKeyProblem) w.push(`${c.geminiKeySource ?? 'GEMINI_API_KEY'} preenchida, mas não é uma chave: ${c.geminiKeyProblem}`);
       if (c.maxTempC >= c.criticalTempC) w.push('MAX_TEMP_C deve ser menor que CRITICAL_TEMP_C');
       if (c.host !== '127.0.0.1' && c.host !== 'localhost' && !c.apiToken) w.push('servidor exposto na rede sem API_TOKEN');
       if (c.powerWatts === undefined && c.minerType !== 'simulated') w.push('POWER_WATTS não informado: custo de energia ficará indisponível');

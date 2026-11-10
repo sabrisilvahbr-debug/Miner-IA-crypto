@@ -16,7 +16,7 @@ const SOURCES: Record<string, string> = {
   'read:market': 'Coinbase e mempool.space',
   'read:pool': 'pool (Luxor ou JSON)',
   'read:wallet': 'mempool.space (endereço público)',
-  'call:llm': 'API Anthropic (opcional)',
+  'call:llm': 'LLM opcional: Gemini (Google) ou Claude (Anthropic)',
   'read:metrics': 'métricas gravadas por outros agentes',
 };
 

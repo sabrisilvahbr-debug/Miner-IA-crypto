@@ -2,6 +2,8 @@
 // Nenhum segredo é registrado em log; veja o agente 27 (Cofre de Credenciais).
 import { existsSync, readFileSync } from 'node:fs';
 import { posix as pathPosix, win32 as pathWin32 } from 'node:path';
+import { inspectGoogleKey, type GoogleKeyKind } from './core/llmKeys.ts';
+import { GEMINI_DEFAULT_MODEL, GEMINI_THINKING_LEVELS, normalizeGeminiModel, type GeminiApiMode, type GeminiThinkingLevel } from './core/gemini.ts';
 
 export type MinerType = 'simulated' | 'xmrig' | 'cgminer' | 'none';
 export type SourceMode = 'simulated' | 'real' | 'none';
@@ -73,8 +75,21 @@ export interface AppConfig {
   externalCallsPerMinute: number;
 
   llmEnabled: boolean;
+  /** auto: decide pela chave presente (veja resolveLlmProvider em core/llmGateway.ts). */
+  llmProvider: 'auto' | 'anthropic' | 'gemini';
   anthropicApiKey?: string;
-  llmModel: string;
+  llmModel: string; // modelo da Anthropic
+  /** Chave do Google já normalizada (GEMINI_API_KEY ou, na falta dela, GOOGLE_API_KEY). Segredo: só no backend. */
+  geminiApiKey?: string;
+  geminiKeyKind?: GoogleKeyKind;
+  geminiKeySource?: 'GEMINI_API_KEY' | 'GOOGLE_API_KEY';
+  /** Preenchido quando há um valor na variável, mas ele não pode ser uma chave (texto de exemplo, espaços…). */
+  geminiKeyProblem?: string;
+  geminiKeyWarning?: string;
+  geminiModel: string;
+  geminiModelProblem?: string;
+  geminiApiMode: GeminiApiMode;
+  geminiThinkingLevel?: GeminiThinkingLevel;
   llmMaxCallsPerDay: number;
   llmMaxTokensPerMonth: number;
 
@@ -213,6 +228,32 @@ export function payoutAddresses(env: NodeJS.ProcessEnv): Record<string, string> 
   return out;
 }
 
+type GeminiConfig = Pick<AppConfig, 'geminiApiKey' | 'geminiKeyKind' | 'geminiKeySource' | 'geminiKeyProblem' | 'geminiKeyWarning' | 'geminiModel' | 'geminiModelProblem' | 'geminiApiMode' | 'geminiThinkingLevel'>;
+
+/**
+ * GEMINI_API_KEY (ou GOOGLE_API_KEY), GEMINI_MODEL, GEMINI_API_MODE e GEMINI_THINKING_LEVEL.
+ * A chave é aceita em qualquer formato emitido pelo Google (AQ.…, AIza… ou outro): só enganos evidentes
+ * de preenchimento são recusados, e o motivo fica em geminiKeyProblem (nunca a chave).
+ */
+export function geminiConfig(env: NodeJS.ProcessEnv): GeminiConfig {
+  const source = str(env, 'GEMINI_API_KEY') !== undefined ? 'GEMINI_API_KEY' : str(env, 'GOOGLE_API_KEY') !== undefined ? 'GOOGLE_API_KEY' : undefined;
+  const insp = source ? inspectGoogleKey(env[source]) : undefined;
+  const rawModel = str(env, 'GEMINI_MODEL');
+  const model = rawModel ? normalizeGeminiModel(rawModel) : GEMINI_DEFAULT_MODEL;
+  const level = str(env, 'GEMINI_THINKING_LEVEL')?.toLowerCase() as GeminiThinkingLevel | undefined;
+  return {
+    geminiApiKey: insp?.ok ? insp.key : undefined,
+    geminiKeyKind: insp?.ok ? insp.kind : undefined,
+    geminiKeySource: source,
+    geminiKeyProblem: insp && !insp.ok ? insp.problem : undefined,
+    geminiKeyWarning: insp?.ok ? insp.warning : undefined,
+    geminiModel: model ?? GEMINI_DEFAULT_MODEL,
+    geminiModelProblem: rawModel && !model ? `GEMINI_MODEL inválido: usado ${GEMINI_DEFAULT_MODEL}` : undefined,
+    geminiApiMode: oneOf(env, 'GEMINI_API_MODE', ['auto', 'interactions', 'generate-content'] as const, 'auto'),
+    geminiThinkingLevel: level && GEMINI_THINKING_LEVELS.includes(level) ? level : undefined,
+  };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = true): AppConfig {
   if (useDotEnv) loadDotEnv();
   const dataDir = str(env, 'DATA_DIR') ?? 'data';
@@ -281,6 +322,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, useDotEnv = tru
     externalCallsPerMinute: num(env, 'EXTERNAL_CALLS_PER_MINUTE', 30),
 
     llmEnabled: bool(env, 'LLM_ENABLED', false),
+    llmProvider: oneOf(env, 'LLM_PROVIDER', ['auto', 'anthropic', 'gemini'] as const, 'auto'),
+    ...geminiConfig(env),
     anthropicApiKey: str(env, 'ANTHROPIC_API_KEY'),
     llmModel: str(env, 'LLM_MODEL') ?? 'claude-haiku-5-5',
     llmMaxCallsPerDay: num(env, 'LLM_MAX_CALLS_PER_DAY', 10),

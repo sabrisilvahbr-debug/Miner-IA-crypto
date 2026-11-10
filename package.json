@@ -18,6 +18,8 @@
     "audit:agents": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/agents-audit.ts",
     "celular": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/celular.ts",
     "setup": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/setup-env.ts",
+    "gemini:setup": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/gemini-setup.ts",
+    "gemini:check": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/gemini-check.ts",
     "check:modules": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/src/tools/check-modules.ts"
   },
   "devDependencies": {

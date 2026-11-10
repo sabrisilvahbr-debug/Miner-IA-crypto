@@ -41,6 +41,10 @@ Testes: `npm test`. Carregamento de todos os módulos (sem dependências): `npm 
 
 Não exponha o painel à internet sem um túnel ou VPN com HTTPS.
 
+## Ligar o LLM com o Gemini (opcional)
+
+O painel funciona sem LLM. Para o Redator de Análises (agente 34) escrever o resumo com um modelo de linguagem, crie uma chave em https://aistudio.google.com/apikey e dê duplo clique em **`Configurar-Gemini.bat`**: ele pede a chave, testa com o Google e grava no `.env`. Qualquer formato de chave do Google é aceito (`AQ.…`, `AIza…` ou outro); quem decide se a chave vale é o Google, não o prefixo. Conferir depois: `npm run gemini:check`. Detalhes, limites e o que é enviado ao Google: [`docs/GEMINI.md`](docs/GEMINI.md).
+
 ## Fontes de dados reais
 
 Por padrão todas as fontes estão em `none` e aparecem como **INDISPONÍVEL**. Em produção, `simulated` é recusado e o painel avisa. Para dados reais, ajuste o `.env`:
@@ -70,7 +74,7 @@ A Coinbase é corretora e carteira, **não é uma pool de mineração**. O camin
 - **Procedência obrigatória** em toda métrica: `real`, `estimado`, `simulado` (só em testes) ou `teste`.
 - **Estado da mineração** com máquina de estados explícita (DESATIVADA, PRONTA PARA TESTE, TESTE AUTORIZADO, INICIANDO, MINERANDO, ERRO, PARADA, DADOS INDISPONÍVEIS) e oito indicadores independentes. MINERANDO exige processo ativo e hashrate medido pelo próprio minerador.
 - **Auditoria** com trilha encadeada por SHA-256.
-- **LLM opcional** (Claude API) por um único gateway, com limites e validação da saída. Desligado por padrão: o plano **Claude Pro não inclui chave de API**; ela é contratada à parte no Console da Anthropic e cobrada por uso.
+- **LLM opcional** por um único gateway, com dois provedores: **Gemini (Google)**, que tem nível gratuito, ou Claude (Anthropic). Limites de chamadas e tokens, validação da saída e texto fixo quando o modelo falha. Desligado por padrão. O plano **Claude Pro não inclui chave de API**. Como ligar: [`docs/GEMINI.md`](docs/GEMINI.md).
 - **Saúde e dependências**: cada agente tem verificação de saúde por regras fixas (execução, batimento, falhas, fonte, dependências) e declara de quais agentes consome dados; o mapa é validado contra ciclos e aparece na ficha do agente e como arcos no escritório.
 - **Escritório 3D** em WebGL (three.js em `web/vendor/`, nada para instalar): câmera orbital, 10 salas, 50 agentes com anel de estado, filtros por estado e setor, ficha individual, console de eventos (copiar/baixar JSON), alertas, ações para aprovar, métricas, relatórios e controles do Guardião.
 
@@ -79,6 +83,7 @@ Arquitetura, mapa de dependências, modos de execução, recursos e modelo de da
 ## Limitações conhecidas
 
 - **Integração Luxor ainda não validada com a conta real**: o código e os testes estão prontos, mas a consulta autenticada precisa ser feita no seu computador (`npm run luxor:check`). Veja [`docs/LUXOR.md`](docs/LUXOR.md).
+- **Gemini não validado com chave real**: o gateway foi exercitado contra o servidor do Google só até a recusa de chaves falsas; a geração com uma chave válida precisa ser conferida no seu computador (`npm run gemini:check`). Veja [`docs/GEMINI.md`](docs/GEMINI.md).
 - **Nenhum adaptador foi validado com equipamento real.** nvidia-smi, XMRig, cgminer, Coinbase, mempool.space, WhatToMine e a pool JSON foram testados com respostas de teste; a classificação de cada agente está em [`docs/AUDITORIA-AGENTES.md`](docs/AUDITORIA-AGENTES.md).
 - **Mineração com a RTX 3050 não implementada**: nenhum minerador de GPU foi verificado (origem, integridade e compatibilidade). O botão INICIAR TESTE mostra o que falta e não executa nada.
 - O agente 48 (Telegram) está como `stub`: implementado, mas não testado com um bot real.
